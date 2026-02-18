@@ -90,6 +90,16 @@
             color: #111;
         }
 
+        /* Flashing red for loading state */
+        @keyframes flash-red {
+            0%, 100% { background-color: #d9534f; }
+            50% { background-color: #ff6b6b; }
+        }
+        .btn-loading {
+            animation: flash-red 1s infinite;
+            color: white !important;
+        }
+
         /* File list styling */
         .file-row {
             display: flex;
@@ -329,16 +339,41 @@
         async function togglePlayback() {
             const btn = document.getElementById('playToggleBtn');
             if (!btn) return;
-            setBusy(btn, true, playbackRunning ? 'Stopping...' : 'Playing...');
-            try {
-                if (playbackRunning) {
+            
+            if (playbackRunning) {
+                // Just stop - quick operation
+                setBusy(btn, true, 'Stopping...');
+                try {
                     await apiFetch('/wav/stop', { method: 'POST' });
-                } else {
-                    await apiFetch('/wav/play-queued', { method: 'POST' });
+                } finally {
+                    setBusy(btn, false);
+                    setTimeout(refreshAudioStatuses, 400);
                 }
-            } finally {
-                setBusy(btn, false);
-                setTimeout(refreshAudioStatuses, 400);
+            } else {
+                // Starting playback - show flashing red while loading
+                btn.classList.add('btn-loading');
+                btn.textContent = 'Loading...';
+                btn.disabled = true;
+                try {
+                    await apiFetch('/wav/play-queued', { method: 'POST' });
+                    // Keep flashing until playback actually starts
+                    let attempts = 0;
+                    const checkInterval = setInterval(async () => {
+                        await refreshAudioStatuses();
+                        attempts++;
+                        if (playbackRunning || attempts > 30) { // Max 30 seconds
+                            clearInterval(checkInterval);
+                            btn.classList.remove('btn-loading');
+                            btn.disabled = false;
+                            updatePlaybackButton(playbackRunning);
+                        }
+                    }, 1000);
+                } catch (e) {
+                    btn.classList.remove('btn-loading');
+                    btn.disabled = false;
+                    updatePlaybackButton(false);
+                    throw e;
+                }
             }
         }
 
