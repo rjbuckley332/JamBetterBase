@@ -481,8 +481,17 @@
             const statusDiv = document.getElementById('tracksRecordStatus');
             
             if (!name) {
+                // Switch to Control tab and focus the session name field there
+                showTab('control');
+                const mainNameInput = document.getElementById('sessionNameInput');
+                if (mainNameInput) {
+                    mainNameInput.focus();
+                    mainNameInput.style.border = '2px solid #f0ad4e';
+                    setTimeout(() => {
+                        mainNameInput.style.border = '';
+                    }, 2000);
+                }
                 alert('Please enter a session name before recording.');
-                nameInput.focus();
                 return;
             }
             
