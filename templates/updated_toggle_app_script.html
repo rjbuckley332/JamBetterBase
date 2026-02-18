@@ -487,6 +487,13 @@
             return '📄';
         }
 
+        function prettyUploadName(name) {
+            // Temp uploads are stored as: <uuid>_<original>
+            // Hide the uuid prefix for readability.
+            if (!name) return name;
+            return name.replace(/^[0-9a-f]{32}_/i, '');
+        }
+
         async function wavRefresh() {
             try {
                 const res = await apiFetch('/wav/browse?path=' + encodeURIComponent('/' + wavCurrentPath));
@@ -519,7 +526,8 @@
                         sizeStr = mb < 1 ? (f.size / 1024).toFixed(1) + ' KB' : mb.toFixed(1) + ' MB';
                     }
                     
-                    row.innerHTML = '<span>' + getFileIcon(f.name) + ' ' + f.name + (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + ')</small>' : '') + '</span>';
+                    const displayName = (wavCurrentPath.includes('recordings/temp/')) ? prettyUploadName(f.name) : f.name;
+                    row.innerHTML = '<span>' + getFileIcon(f.name) + ' ' + displayName + (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + ')</small>' : '') + '</span>';
                     
                     const actions = document.createElement('div');
                     actions.className = 'file-actions';
