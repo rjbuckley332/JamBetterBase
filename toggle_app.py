@@ -5,6 +5,20 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import urllib.parse
 
+# ---------- TIMEZONE ----------
+# We want human-facing timestamps (filenames/logs) in Eastern time.
+# This handles EST/EDT automatically.
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+    _LOCAL_TZ = ZoneInfo("America/New_York")
+except Exception:
+    _LOCAL_TZ = None
+
+def _now_local() -> datetime:
+    if _LOCAL_TZ is None:
+        return datetime.now()
+    return datetime.now(_LOCAL_TZ)
+
 app = Flask(__name__)
 
 # Secret for signed session cookies (set env WEB_SESSION_SECRET to persist across restarts)
@@ -464,7 +478,7 @@ def toggle_recording():
             save_session_name(name)
             log_session_name(name)
             with open(RECORDING_MAP_CSV, "a") as f:
-                f.write(f"{datetime.now().strftime('%Y%m%d_%H%M%S')},{name}\n")
+                f.write(f"{_now_local().strftime('%Y%m%d_%H%M%S')},{name}\n")
         return "OK", 200
 
     # Trigger Jamulus.
@@ -490,7 +504,7 @@ def toggle_recording():
             save_session_name(name)
             log_session_name(name)
             with open(RECORDING_MAP_CSV, "a") as f:
-                f.write(f"{datetime.now().strftime('%Y%m%d_%H%M%S')},{name}\n")
+                f.write(f"{_now_local().strftime('%Y%m%d_%H%M%S')},{name}\n")
         Path(RECORDING_FLAG).write_text("ON")
         Path(SESSION_STATUS).write_text("ACTIVE")
     else:  # stop
@@ -617,7 +631,7 @@ def wav_queue():
         return 'Missing file', 400
     q = _queue_read()
     q['file'] = wav
-    q['set_at'] = datetime.utcnow().isoformat()
+    q['set_at'] = _now_local().isoformat()
     _queue_write(q)
     return 'OK'
 
@@ -913,7 +927,7 @@ def name_used_recently(name, hours=10):
         print(f"[LOG] JSON parse failed: {e}")
         return False
 
-    now = datetime.now()
+    now = _now_local()
     cutoff = now - timedelta(hours=hours)
 
     print(f"[LOG] Checking for recent use of '{name}' — now: {now}, cutoff: {cutoff}")
@@ -922,6 +936,9 @@ def name_used_recently(name, hours=10):
         if entry.get("name") == name:
             try:
                 timestamp = datetime.fromisoformat(entry.get("timestamp"))
+                # Older entries may be naive; assume local time.
+                if timestamp.tzinfo is None and _LOCAL_TZ is not None:
+                    timestamp = timestamp.replace(tzinfo=_LOCAL_TZ)
                 print(f"[LOG] Found '{name}' entry at {timestamp}")
                 if timestamp > cutoff:
                     print(f"[LOG] Name '{name}' used recently!")
@@ -932,7 +949,7 @@ def name_used_recently(name, hours=10):
     return False
 
 def log_session_name(name):
-    entry = {"name": name, "timestamp": datetime.utcnow().isoformat()}
+    entry = {"name": name, "timestamp": _now_local().isoformat()}
     log = []
     if os.path.exists(SESSION_LOG_JSN):
         try:
