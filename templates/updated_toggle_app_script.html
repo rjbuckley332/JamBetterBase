@@ -114,18 +114,6 @@
         
         #wavFiles { max-height: 300px; overflow-y: auto; }
         
-        .session-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 5px 0;
-            padding: 8px;
-            background: rgba(0,0,0,0.15);
-            border-radius: 4px;
-        }
-        
-        .session-name { flex: 1; cursor: pointer; }
-        
         /* Flashing red for loading state */
         @keyframes flash-red {
             0%, 100% { background-color: #d9534f; }
@@ -207,12 +195,6 @@
             </div>
         </div>
 
-        <!-- SAVED SESSIONS -->
-        <div class="section">
-            <h3>💾 Saved Sessions</h3>
-            <p style="font-size:12px;opacity:0.8;margin:0 0 10px 0;">(Click a name to reuse it)</p>
-            <div id="savedSessions"></div>
-        </div>
     </div>
 
     <script>
@@ -584,37 +566,8 @@
                 }
             } catch (e) {}
             
-            // Saved sessions
-            try {
-                const res = await apiFetch('/get-names');
-                const sessions = await res.json();
-                const div = document.getElementById('savedSessions');
-                div.innerHTML = '';
-                (sessions || []).forEach(item => {
-                    const s = (typeof item === 'object' && item.name) ? item.name : item;
-                    const row = document.createElement('div');
-                    row.className = 'session-row';
-                    row.innerHTML = '<span class="session-name" onclick="document.getElementById(\'sessionNameInput\').value=\'' + s + '\'">' + s + '</span>' +
-                        '<div><button class="btn btn-sm btn-info" onclick="document.getElementById(\'sessionNameInput\').value=\'' + s + '\'">Load</button>' +
-                        '<button class="btn btn-sm btn-danger" onclick="deleteSession(\'' + s + '\')">Delete</button></div>';
-                    div.appendChild(row);
-                });
-            } catch (e) {}
-            
             refreshPlaybackStatus();
             updatePlaybackButton();
-        }
-
-        async function deleteSession(name) {
-            if (!confirm('Delete "' + name + '"?')) return;
-            try {
-                await apiFetch('/delete-name', {
-                    method: 'POST',
-                    headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({name: name})
-                });
-                refreshStatuses();
-            } catch (e) {}
         }
 
         // Init
