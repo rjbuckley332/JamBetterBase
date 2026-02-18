@@ -378,7 +378,7 @@
 
         async function refreshPlaybackStatus() {
             try {
-                const res = await apiFetch('/api/playback/status');
+                const res = await apiFetch('/wav/status');
                 const data = await res.json();
                 playbackRunning = data.running || false;
             } catch (e) {}
