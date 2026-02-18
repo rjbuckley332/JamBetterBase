@@ -430,7 +430,7 @@
 
         async function wavRefresh() {
             try {
-                const res = await apiFetch('/wav/browse?prefix=' + encodeURIComponent(wavCurrentPath));
+                const res = await apiFetch('/wav/browse?path=' + encodeURIComponent('/' + wavCurrentPath));
                 const data = await res.json();
                 const filesDiv = document.getElementById('wavFiles');
                 filesDiv.innerHTML = '';
