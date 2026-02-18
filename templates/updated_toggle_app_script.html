@@ -208,6 +208,17 @@
         <button class="btn btn-sm btn-info" onclick="restartTrack()">Restart Track</button>
         <button class="btn btn-sm btn-warning" onclick="clearQueuedWav()">Clear Track</button>
       </div>
+      
+      <!-- Recording section on Backing Track tab -->
+      <div style="margin:15px 0; padding:12px; background:rgba(0,0,0,0.25); border-radius:8px; border:1px solid rgba(255,255,255,0.2);">
+        <h4 style="margin:0 0 10px 0;">🎙️ Record Session</h4>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <label>Session Name (required):</label>
+          <input type="text" id="tracksSessionName" placeholder="Enter session name before recording" style="flex:1; min-width:200px; padding:6px; border-radius:4px; border:1px solid #ccc;">
+          <button id="tracksRecordBtn" class="btn btn-success" onclick="startRecordingFromTracks()">Start Recording</button>
+        </div>
+        <div id="tracksRecordStatus" style="margin-top:8px; font-size:13px; color:#5cb85c; display:none;"></div>
+      </div>
 
       <div id="wavBrowser" style="margin-top:10px; padding:10px; border:1px solid rgba(255,255,255,0.35); border-radius:8px; background: transparent; display:flex; flex-direction:column; max-height:70vh;">
         <div class="nav-row">
@@ -426,8 +437,17 @@
 
         async function toggleRecording() {
             const btn = document.getElementById("recordToggleBtn");
-            const name = document.getElementById("sessionNameInput").value.trim();
+            const nameInput = document.getElementById("sessionNameInput");
+            const name = nameInput.value.trim();
             const isStarting = btn.textContent.trim().toLowerCase().includes("start");
+            
+            // Require session name when starting recording
+            if (isStarting && !name) {
+                alert('Please enter a session name before recording.');
+                nameInput.focus();
+                return;
+            }
+            
             try {
                 const res = await apiFetch("/toggle-recording", {
                     method: "POST",
@@ -448,6 +468,64 @@
                     updateRecordingButton(isStarting ? "ON" : "OFF");
                     setTimeout(refreshStatuses, 1000);
                 }
+            } catch (err) {
+                console.error(err);
+                alert("Request error.");
+            }
+        }
+
+        // Recording from Backing Track tab
+        async function startRecordingFromTracks() {
+            const nameInput = document.getElementById('tracksSessionName');
+            const name = nameInput.value.trim();
+            const statusDiv = document.getElementById('tracksRecordStatus');
+            
+            if (!name) {
+                alert('Please enter a session name before recording.');
+                nameInput.focus();
+                return;
+            }
+            
+            // Also require a backing track to be loaded
+            const q = await apiFetch('/wav/queue').then(r => r.json()).catch(() => ({}));
+            if (!q.file) {
+                alert('Please load a backing track before recording.');
+                return;
+            }
+            
+            try {
+                const res = await apiFetch("/toggle-recording", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_name: name, action: "start" })
+                });
+                
+                if (!res.ok) {
+                    const msg = await res.text();
+                    alert(msg || "Failed to start recording");
+                    return;
+                }
+                
+                // Start playing the backing track
+                try { 
+                    await apiFetch('/wav/play-queued', { method: 'POST' }); 
+                } catch (e) { 
+                    console.warn('play-queued failed', e); 
+                }
+                
+                // Update UI
+                statusDiv.textContent = '✅ Recording started: ' + name;
+                statusDiv.style.display = 'block';
+                statusDiv.style.color = '#5cb85c';
+                
+                // Update the Control tab button too
+                const mainBtn = document.getElementById("recordToggleBtn");
+                if (mainBtn) {
+                    mainBtn.textContent = "Stop Recording";
+                    mainBtn.className = "btn btn-danger";
+                }
+                
+                setTimeout(refreshStatuses, 1000);
             } catch (err) {
                 console.error(err);
                 alert("Request error.");
