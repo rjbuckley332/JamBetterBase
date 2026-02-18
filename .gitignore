@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+.env
+.env.*
+.venv/
+venv/
+ENV/
+
+# Logs
+*.log
+.log/
+
+# Backups
+*.bak
+*.bak.*
+*.broken
+*.broken*
+
+# AWS credentials
+.aws/
+
+# SSH keys
+.ssh/
+
+# Local config
+.cache/
+.config/
+.local/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Trackbot shadows and data
+trackbot_shadow/
+
+# CSV data files (may contain sensitive info)
+*.csv
+
+# JSON logs
+session_name_log.json
+
+# Gunicorn socket
+gunicorn.ctl
+
+# Injector bot ini (may contain secrets)
+Injector-bot.ini
+Injector-bot.ini.bak*

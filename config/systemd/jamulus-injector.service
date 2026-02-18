@@ -1,0 +1,24 @@
+[Unit]
+Description=Jamulus injector client (Injector-bot)
+After=network-online.target jamulus-headless.service jackd.service
+Wants=network-online.target jamulus-headless.service jackd.service
+
+[Service]
+Type=simple
+User=nds
+Group=audio
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+ExecStart=/usr/bin/pw-jack /usr/bin/jamulus -n -j -c 127.0.0.1 --clientname Injector-bot -i /home/nds/.config/Jamulus/Jamulus.ini
+Restart=always
+RestartSec=2
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+Nice=-10
+AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_SYS_NICE CAP_IPC_LOCK
+
+StandardOutput=append:/home/nds/jamulus_injector.log
+StandardError=append:/home/nds/jamulus_injector.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=Jamulus headless server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nds
+Group=audio
+ExecStart=/usr/bin/jamulus -s -n \
+  --jsonrpcport 22100 --jsonrpcsecretfile /var/lib/jamulus/jsonrpc-secret.txt \
+  -R /var/lib/jamulus/recordings --norecord \
+  -l /var/log/jamulus/jamulus-server.log \
+  -m /var/lib/jamulus/status/jamulus_status.html
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

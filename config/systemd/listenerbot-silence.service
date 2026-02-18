@@ -1,0 +1,20 @@
+[Unit]
+Description=ListenerBot Silence Detector
+After=listenerbot.service trackbot-web.service
+Wants=listenerbot.service trackbot-web.service
+
+[Service]
+Type=simple
+User=nds
+Group=audio
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+WorkingDirectory=/home/nds
+ExecStart=/usr/bin/python3 /home/nds/listenerbot_silence.py
+Restart=always
+RestartSec=5
+
+StandardOutput=append:/home/nds/listenerbot-silence.log
+StandardError=append:/home/nds/listenerbot-silence.log
+
+[Install]
+WantedBy=multi-user.target

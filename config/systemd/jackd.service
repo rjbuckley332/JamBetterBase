@@ -1,0 +1,22 @@
+[Unit]
+Description=JACK Audio Daemon (dummy backend)
+After=network.target
+
+[Service]
+Type=simple
+User=nds
+Group=audio
+ExecStart=/usr/bin/jackd -r -d dummy -r 48000 -p 4096 -w 80000
+Restart=always
+RestartSec=2
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+Nice=-10
+AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_SYS_NICE CAP_IPC_LOCK
+
+StandardOutput=append:/home/nds/jackd.log
+StandardError=append:/home/nds/jackd.log
+
+[Install]
+WantedBy=multi-user.target

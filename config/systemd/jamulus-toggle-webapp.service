@@ -1,0 +1,17 @@
+[Unit]
+Description=Jamulus Recording Toggle Webapp (Gunicorn)
+After=network-online.target jamulus-headless.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nds
+Group=nds
+WorkingDirectory=/home/nds
+EnvironmentFile=/home/nds/.env
+ExecStart=/home/nds/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 toggle_app:app
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

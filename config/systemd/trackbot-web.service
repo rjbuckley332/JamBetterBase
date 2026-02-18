@@ -1,0 +1,28 @@
+[Unit]
+Description=TrackBot web
+After=network-online.target jackd.service
+Wants=network-online.target jackd.service
+
+[Service]
+KillMode=control-group
+TimeoutStopSec=5
+EnvironmentFile=/home/nds/.env
+Type=simple
+User=nds
+Group=audio
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+WorkingDirectory=/home/nds/trackbot
+ExecStart=/home/nds/.venv/bin/python -u /home/nds/trackbot/app.py
+Restart=always
+RestartSec=2
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+Nice=-10
+AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_SYS_NICE CAP_IPC_LOCK
+
+StandardOutput=append:/home/nds/trackbot.log
+StandardError=append:/home/nds/trackbot.log
+
+[Install]
+WantedBy=multi-user.target

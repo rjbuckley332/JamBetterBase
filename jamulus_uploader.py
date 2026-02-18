@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""Jamulus uploader: direct upload to S3 (JamBetter).
+
+Flow:
+- Wait for a Jam-* folder to "settle" (no recent writes)
+- Build a singer-only leveled mix MP3 (excludes injector-bot)
+- Upload WAVs + mix to S3 using friendly names derived from:
+  - Session name entered on the website (NAME_MAP_FILE -> jam_key)
+  - Jamulus client names (from the WAV filenames)
+
+S3 layout:
+  s3://<S3_BUCKET>/<S3_PREFIX>/<YYYY-MM-DD>/<SESSION_NAME>/<FILES>
+
+Filename convention (all uppercase, padded):
+  <FOLD6>_<YYMMDD>_<PART4>.wav
+  <FOLD6>_<YYMMDD>_MIXL.mp3
+
+Where:
+- FOLD6 = first 6 chars of the website session name (A-Z0-9 only, '_' padding)
+- PART4 = first 4 chars of the Jamulus client name (A-Z0-9 only, '_' padding)
+
+Env vars:
+- AWS_CLI_PATH: path to aws cli (default: /home/nds/.local/bin/aws)
+- AWS_REGION: region for aws cli (default: us-east-1)
+- S3_BUCKET: bucket name (default: pipedreamers-recordings-prod)
+- S3_PREFIX: key prefix (default: vps/vps-0001/recordings)
+- RECORDINGS_DIR: local recordings dir (default: /var/lib/jamulus/recordings)
+- NAME_MAP_FILE: csv mapping jam_key -> session name (default: /home/nds/recording_name_map.csv)
+- SETTLE_SECONDS: age threshold before upload (default: 45)
+- POLL_SECONDS: poll interval (default: 20)
+
+Notes:
+- Writes marker files in RECORDINGS_DIR/.uploaded/<Jam-...>.done after successful upload.
+- Does NOT delete local recordings.
+"""
+
+import os
+import re
+import subprocess
+import time
+import csv
+from pathlib import Path
+
+
+def _env(name: str, default: str) -> str:
+    v = os.getenv(name)
+    return v.strip() if isinstance(v, str) and v.strip() else default
+
+
+def run(cmd: list[str]) -> tuple[int, str]:
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    return p.returncode, p.stdout
+
+
+_JAM_DATE_RE = re.compile(r"^Jam-(\d{4})(\d{2})(\d{2})-")
+_JAM_KEY_RE = re.compile(r"^Jam-(\d{8})-(\d{6})")
+
+
+def jam_folder_date(jam_name: str) -> str:
+    m = _JAM_DATE_RE.match(jam_name)
+    if not m:
+        return ''
+    y, mo, d = m.group(1), m.group(2), m.group(3)
+    return f"{y}-{mo}-{d}"
+
+
+def jam_key(jam_name: str) -> str:
+    """Return key like YYYYMMDD_HHMMSS for Jam-YYYYMMDD-HHMMSSmmm."""
+    m = _JAM_KEY_RE.match(jam_name)
+    if not m:
+        return ''
+    return f"{m.group(1)}_{m.group(2)}"
+
+
+def sanitize(name: str) -> str:
+    name = (name or '').strip()
+    name = re.sub(r"\s+", " ", name)
+    name = re.sub(r"[^A-Za-z0-9 _\-]+", "", name)
+    return name[:80] if name else "Unnamed"
+
+
+def lookup_session_name(map_file: str, key: str) -> str | None:
+    if not map_file or not key:
+        return None
+    try:
+        if not os.path.exists(map_file):
+            return None
+        with open(map_file, newline='', encoding='utf-8') as f:
+            rows = list(csv.reader(f))
+        # Expect: key,name[,dest]
+        for row in reversed(rows):
+            if not row:
+                continue
+            if row[0].strip() == key and len(row) >= 2 and row[1].strip():
+                return row[1].strip()
+    except Exception:
+        return None
+    return None
+
+
+def consume_name(map_file: str, key: str):
+    """Remove the first matching key row (queue behavior) after successful upload."""
+    try:
+        if not map_file or not key or not os.path.exists(map_file):
+            return
+        with open(map_file, newline='', encoding='utf-8') as f:
+            rows = list(csv.reader(f))
+        out = []
+        removed = False
+        for row in rows:
+            if (not removed) and row and row[0].strip() == key:
+                removed = True
+                continue
+            out.append(row)
+        if removed:
+            tmp = map_file + '.tmp'
+            with open(tmp, 'w', newline='', encoding='utf-8') as f:
+                w = csv.writer(f)
+                w.writerows(out)
+            os.replace(tmp, map_file)
+    except Exception:
+        pass
+
+
+def wav_should_exclude(basename: str) -> bool:
+    """Exclude injector bot and any obvious non-singer tracks."""
+    b = (basename or '').lower()
+    if b.startswith('no_name-') and '127_0_0_1' in b:
+        return True
+    if 'injector-bot' in b or 'injector_bot' in b or 'injectorbot' in b:
+        return True
+    if 'injector' in b and b.endswith('.wav'):
+        return True
+    return False
+
+
+def _pan_params_for_track(name: str) -> str:
+    """Return an ffmpeg pan filter string for a barbershop stage layout."""
+    n = (name or '').lower()
+
+    # Stage order (listener perspective): Bari, Bass, Lead, Tenor
+    if ('bari' in n) or ('tom' in n):
+        return 'pan=stereo|FL=1.00*c0|FR=0.10*c0'
+    if ('bass' in n) or re.search(r'\bed\b', n):
+        return 'pan=stereo|FL=0.80*c0|FR=0.60*c0'
+    if ('lead' in n) or ('rich' in n):
+        return 'pan=stereo|FL=0.60*c0|FR=0.80*c0'
+    if ('tenor' in n) or ('scott' in n):
+        return 'pan=stereo|FL=0.10*c0|FR=1.00*c0'
+
+    return 'pan=stereo|FL=0.70*c0|FR=0.70*c0'
+
+
+def create_leveled_mix_mp3(session_folder: Path, output_base: str,
+                           target_i: int = -20, true_peak: int = -2, lra: int = 7) -> Path | None:
+    """Create a loudness-leveled, panned stereo mix MP3 from singer WAVs."""
+    wavs: list[Path] = []
+    for p in sorted(session_folder.glob('*.wav')):
+        if p.stat().st_size < 10240:
+            continue
+        if wav_should_exclude(p.name):
+            continue
+        wavs.append(p)
+
+    if not wavs:
+        return None
+
+    out_mp3 = session_folder / f"{output_base}_MIXED_LEVELED.mp3"
+    if out_mp3.exists() and out_mp3.stat().st_size > 20000:
+        return out_mp3
+
+    processed_dir = session_folder / 'processed'
+    processed_dir.mkdir(exist_ok=True)
+
+    processed_files: list[Path] = []
+    for w in wavs:
+        bn = w.stem
+        out_wav = processed_dir / f"{bn}.norm.wav"
+        processed_files.append(out_wav)
+
+        pan = _pan_params_for_track(bn)
+        cmd = [
+            'ffmpeg', '-nostdin', '-y',
+            '-i', str(w),
+            '-af', f"loudnorm=I={target_i}:TP={true_peak}:LRA={lra},{pan}",
+            '-ar', '48000',
+            '-c:a', 'pcm_s16le',
+            str(out_wav),
+        ]
+        rc, out = run(cmd)
+        if rc != 0:
+            print(f"[mix] loudnorm failed for {w.name}\n{out}")
+            return None
+
+    inputs: list[str] = []
+    for f in processed_files:
+        inputs += ['-i', str(f)]
+    in_tags = ''.join([f"[{i}:a]" for i in range(len(processed_files))])
+    filter_complex = f"{in_tags}amix=inputs={len(processed_files)}:normalize=0,alimiter=limit=0.98[a]"
+
+    cmd_mix = [
+        'ffmpeg', '-nostdin', '-y',
+        *inputs,
+        '-filter_complex', filter_complex,
+        '-map', '[a]',
+        '-codec:a', 'libmp3lame',
+        '-q:a', '2',
+        str(out_mp3),
+    ]
+    rc2, out2 = run(cmd_mix)
+    if rc2 != 0:
+        print(f"[mix] mix failed for {session_folder.name}\n{out2}")
+        return None
+
+    try:
+        for f in processed_files:
+            f.unlink(missing_ok=True)
+        if processed_dir.exists() and not any(processed_dir.iterdir()):
+            processed_dir.rmdir()
+    except Exception:
+        pass
+
+    return out_mp3
+
+
+def _pad_upper_alnum(s: str, width: int) -> str:
+    s = (s or '').upper()
+    s = re.sub(r'[^A-Z0-9]+', '', s)
+    s = s[:width]
+    return s.ljust(width, '_')
+
+
+def _client_code_from_wav(wav_path: Path) -> str:
+    stem = wav_path.stem
+    # Strip trailing _<digits> (Jamulus numbering)
+    stem = re.sub(r'_\d+$', '', stem)
+    return _pad_upper_alnum(stem, 4)
+
+
+def _yymmdd_from_date_folder(date_folder: str) -> str:
+    m = re.fullmatch(r'(\d{4})-(\d{2})-(\d{2})', date_folder or '')
+    if not m:
+        return time.strftime('%y%m%d')
+    return m.group(1)[2:4] + m.group(2) + m.group(3)
+
+
+def s3_cp(aws_cli: str, region: str, src: Path, dest: str) -> tuple[int, str]:
+    cmd = [aws_cli, 's3', 'cp', str(src), dest, '--region', region]
+    return run(cmd)
+
+
+def main():
+    recordings_dir = Path(_env('RECORDINGS_DIR', '/var/lib/jamulus/recordings'))
+    uploaded_dir = recordings_dir / '.uploaded'
+    uploaded_dir.mkdir(parents=True, exist_ok=True)
+
+    name_map_file = _env('NAME_MAP_FILE', '/home/nds/recording_name_map.csv')
+
+    aws_cli = _env('AWS_CLI_PATH', '/home/nds/.local/bin/aws')
+    aws_region = _env('AWS_REGION', 'us-east-1')
+    s3_bucket = _env('S3_BUCKET', 'pipedreamers-recordings-prod')
+    s3_prefix = _env('S3_PREFIX', 'vps/vps-0001/recordings').strip('/')
+
+    settle_seconds = int(_env('SETTLE_SECONDS', '45'))
+    poll_seconds = int(_env('POLL_SECONDS', '20'))
+
+    print(f"[uploader] recordings_dir={recordings_dir}")
+    print(f"[uploader] aws_cli={aws_cli} region={aws_region}")
+    print(f"[uploader] s3=s3://{s3_bucket}/{s3_prefix}/")
+    print(f"[uploader] name_map_file={name_map_file}")
+    print(f"[uploader] settle_seconds={settle_seconds} poll_seconds={poll_seconds}")
+
+    while True:
+        try:
+            jam_dirs = sorted(
+                [p for p in recordings_dir.glob('Jam-*') if p.is_dir()],
+                key=lambda p: p.stat().st_mtime,
+            )
+
+            for d in jam_dirs:
+                marker = uploaded_dir / (d.name + '.done')
+                if marker.exists():
+                    continue
+
+                lof = next(d.glob('*.lof'), None)
+                wavs = list(d.glob('*.wav'))
+                if not lof or not wavs:
+                    continue
+
+                newest_mtime = max([f.stat().st_mtime for f in [lof, *wavs]])
+                age = time.time() - newest_mtime
+                if age < settle_seconds:
+                    continue
+
+                date_folder = jam_folder_date(d.name) or time.strftime('%Y-%m-%d')
+                yymmdd = _yymmdd_from_date_folder(date_folder)
+                key = jam_key(d.name)
+                sess = lookup_session_name(name_map_file, key) if key else None
+                sess = (sess or '').strip()
+                if not sess:
+                    # If no website session name, fall back to Jam-* (still deterministic)
+                    sess = d.name
+
+                fold6 = _pad_upper_alnum(sess, 6)
+
+                # Build leveled mix MP3 locally before uploading (singer-only; excludes injector-bot)
+                try:
+                    create_leveled_mix_mp3(d, output_base=sess)
+                except Exception as e:
+                    print(f"[mix] ERROR for {d.name}: {e}")
+
+                s3_base = f"s3://{s3_bucket}/{s3_prefix}/{date_folder}/{sanitize(sess)}/"
+
+                print(f"[uploader] S3 upload {d.name} -> {s3_base}")
+
+                ok_all = True
+
+                # Upload singer wavs (friendly names)
+                for w in sorted(wavs):
+                    if wav_should_exclude(w.name):
+                        continue
+                    part4 = _client_code_from_wav(w)
+                    dest_name = f"{fold6}_{yymmdd}_{part4}.wav"
+                    dest = s3_base + dest_name
+                    rc, out = s3_cp(aws_cli, aws_region, w, dest)
+                    if rc != 0:
+                        ok_all = False
+                        print(f"[uploader] ERROR s3_cp {w.name} -> {dest}\n{out}")
+
+                # Upload leveled mix if present
+                mix_src = d / f"{sess}_MIXED_LEVELED.mp3"
+                if mix_src.exists() and mix_src.stat().st_size > 20000:
+                    dest = s3_base + f"{fold6}_{yymmdd}_MIXL.mp3"
+                    rc, out = s3_cp(aws_cli, aws_region, mix_src, dest)
+                    if rc != 0:
+                        ok_all = False
+                        print(f"[uploader] ERROR s3_cp mix -> {dest}\n{out}")
+                else:
+                    print(f"[uploader] NOTE: mix missing (or too small): {mix_src.name}")
+
+                # Upload RPP (Reaper project) file
+                rpp_files = list(d.glob('*.rpp'))
+                for rpp in rpp_files:
+                    dest = s3_base + rpp.name
+                    rc, out = s3_cp(aws_cli, aws_region, rpp, dest)
+                    if rc != 0:
+                        ok_all = False
+                        print(f"[uploader] ERROR s3_cp rpp -> {dest}\n{out}")
+                    else:
+                        print(f"[uploader] uploaded: {rpp.name}")
+
+                # Upload LOF (Jamulus file list) file
+                if lof:
+                    dest = s3_base + lof.name
+                    rc, out = s3_cp(aws_cli, aws_region, lof, dest)
+                    if rc != 0:
+                        ok_all = False
+                        print(f"[uploader] ERROR s3_cp lof -> {dest}\n{out}")
+                    else:
+                        print(f"[uploader] uploaded: {lof.name}")
+
+                if not ok_all:
+                    continue
+
+                marker.write_text(time.strftime('%Y-%m-%d %H:%M:%S'))
+                if key:
+                    consume_name(name_map_file, key)
+                print(f"[uploader] ok: {d.name} -> {sanitize(sess)}")
+
+        except Exception as e:
+            print(f"[uploader] LOOP_ERROR: {e}")
+
+        time.sleep(poll_seconds)
+
+
+if __name__ == '__main__':
+    main()

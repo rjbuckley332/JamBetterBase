@@ -1,0 +1,22 @@
+[Unit]
+Description=ListenerBot - Jamulus silence detection client
+After=network-online.target jackd.service
+Wants=network-online.target jackd.service
+
+[Service]
+Type=simple
+User=nds
+Group=audio
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+ExecStart=/usr/bin/jamulus -n -j -c 127.0.0.1 --clientname ListenerBot -i /home/nds/.config/Jamulus/ListenerBot.ini
+Restart=always
+RestartSec=2
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+Nice=-5
+
+StandardOutput=append:/home/nds/listenerbot.log
+StandardError=append:/home/nds/listenerbot.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+[Unit]
+Description=Jamulus uploader (direct -> S3)
+After=network-online.target jamulus-headless.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nds
+Group=audio
+
+# S3 upload config
+Environment="AWS_CLI_PATH=/home/nds/.local/bin/aws"
+Environment="AWS_REGION=us-east-2"
+Environment="S3_BUCKET=pipedreamers-recordings-prod"
+Environment="S3_PREFIX=vps/vps-0001/recordings"
+
+Environment="NAME_MAP_FILE=/home/nds/recording_name_map.csv"
+Environment="RECORDINGS_DIR=/var/lib/jamulus/recordings"
+Environment="SETTLE_SECONDS=45"
+Environment="POLL_SECONDS=20"
+
+ExecStart=/usr/bin/python3 -u /home/nds/jamulus_uploader.py
+Restart=always
+RestartSec=3
+
+StandardOutput=append:/home/nds/jamulus_uploader.log
+StandardError=append:/home/nds/jamulus_uploader.log
+
+[Install]
+WantedBy=multi-user.target
