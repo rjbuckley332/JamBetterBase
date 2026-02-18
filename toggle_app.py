@@ -670,6 +670,20 @@ def wav_status():
     return jsonify({"ok": False, "upstream_code": code, "upstream": data}), 502
 
 
+
+@app.route("/wav/download")
+def wav_download():
+    ok, resp = _require_passcode()
+    if not ok: return resp
+    file_path = (request.args.get("file") or "").strip()
+    if not file_path:
+        return jsonify({"ok": False, "error": "missing file"}), 400
+    key = f"vps/{LIBRARY_VPS_ID}/{file_path}"
+    res = _s3_presign(key, expires=300)
+    if not res.get("ok"):
+        return jsonify(res), 403
+    return redirect(res["url"])
+
 # ---------- Library (S3) API ----------
 @app.route('/api/library/list')
 def api_library_list():

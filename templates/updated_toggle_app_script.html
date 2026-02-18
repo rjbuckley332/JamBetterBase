@@ -481,6 +481,14 @@
                             refreshQueuedWav();
                         };
                         actions.appendChild(loadBtn);
+                        
+                        // Download button
+                        const dlBtn = document.createElement('a');
+                        dlBtn.className = 'btn btn-sm btn-info';
+                        dlBtn.textContent = 'Download';
+                        dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                        dlBtn.download = f.name;
+                        actions.appendChild(dlBtn);
                     }
                     
                     row.appendChild(actions);
