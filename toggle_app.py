@@ -684,6 +684,33 @@ def wav_download():
         return jsonify(res), 403
     return redirect(res["url"])
 
+
+@app.route("/wav/tmp-upload", methods=["POST"])
+def wav_tmp_upload():
+    ok, resp = _require_passcode()
+    if not ok: return resp
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "No file provided"}), 400
+    f = request.files["file"]
+    if f.filename == "":
+        return jsonify({"ok": False, "error": "Empty filename"}), 400
+    # Save to temp location
+    tmp_dir = "/tmp/jamulus_uploads"
+    os.makedirs(tmp_dir, exist_ok=True)
+    import uuid
+    filename = f"{uuid.uuid4().hex}_{f.filename.replace(' ', '_').replace('/', '_')}"
+    filepath = os.path.join(tmp_dir, filename)
+    f.save(filepath)
+    # Upload to S3 in recordings/tmp/
+    key = f"vps/{LIBRARY_VPS_ID}/recordings/tmp/{filename}"
+    try:
+        s3 = boto3.client("s3", region_name=LIBRARY_AWS_REGION)
+        s3.upload_file(filepath, LIBRARY_S3_BUCKET, key)
+        os.remove(filepath)
+        return jsonify({"ok": True, "file": f"recordings/tmp/{filename}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 # ---------- Library (S3) API ----------
 
 @app.route("/wav/tmp-upload", methods=["POST"])
