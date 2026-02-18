@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# TrackBot with Manual Arm Auto-Restart
-# User clicks "Arm" after starting to sing, THEN silence detection activates
-
 import html
 import os
 import shlex
@@ -12,7 +9,6 @@ import json
 import wave
 import math
 import time
-import struct
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 HOST = os.environ.get('TRACKBOT_HOST', '127.0.0.1')
@@ -37,175 +33,31 @@ metronome_thread = None
 metronome_bpm = None
 metronome_proc = None
 metronome_volume = 0.25
-metronome_seq = 0
+metronome_seq = 0  # incrementing token to cancel stale async linkers
 
-# Debounce metronome updates
+# Debounce metronome updates so sliders can feel realtime without thrashing
+# the audio process on every tiny movement.
 metronome_pending = {'bpm': None, 'vol': None}
 metronome_debounce_thread = None
 metronome_debounce_evt = threading.Event()
-metronome_debounce_delay = 0.20
+metronome_debounce_delay = 0.20  # seconds
 
-# Manual Arm Auto-Restart State
-auto_restart_armed = False
+# Auto-restart on silence state
 auto_restart_lock = threading.Lock()
+auto_restart_config = {"enabled": False, "silence_seconds": 6, "threshold_db": -60}
 auto_restart_thread = None
 auto_restart_stop = threading.Event()
+last_restart_time = 0
 
-SILENCE_DURATION_SECONDS = 6
-CHECK_INTERVAL = 0.5
-# Fixed threshold: -5 dB (well above -9.5 dB backing track)
-# When user sings, level should go above -5 dB
-# When user stops, level drops below -5 dB → silence detected
-FIXED_THRESHOLD_DB = -3
-
-def _pw_env():
-    env = os.environ.copy()
-    env.setdefault('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
-    return env
-
-def get_listenerbot_outputs():
-    """Find ListenerBot JACK output ports (for silence detection)."""
-    result = subprocess.run(['jack_lsp'], capture_output=True, text=True, env=_pw_env())
-    if result.returncode != 0:
-        return None, None
-    
-    left_port = None
-    right_port = None
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if 'ListenerBot:output left' in line or 'ListenerBot:out_1' in line or 'ListenerBot:output_FL' in line:
-            left_port = line
-        elif 'ListenerBot:output right' in line or 'ListenerBot:out_2' in line or 'ListenerBot:output_FR' in line:
-            right_port = line
-    
-    return left_port, right_port
-
-def calculate_rms_db(data_bytes):
-    """Calculate RMS dB from 16-bit PCM data."""
-    if len(data_bytes) < 2:
-        return -100.0
-    
-    count = len(data_bytes) // 2
-    if count == 0:
-        return -100.0
-    
-    sum_squares = 0
-    for i in range(0, len(data_bytes) - 1, 2):
-        sample = struct.unpack('<h', data_bytes[i:i+2])[0]
-        sum_squares += sample * sample
-    
-    rms = math.sqrt(sum_squares / count)
-    if rms <= 0:
-        return -100.0
-    
-    db = 20 * math.log10(rms / 32768.0)
-    return db
-
-def silence_monitor_thread():
-    """Monitor for silence and auto-restart when armed."""
-    global auto_restart_armed
-    
-    # Wait for ListenerBot ports (JACK client that hears everything)
-    left_port = None
-    for _ in range(60):
-        left_port, _ = get_listenerbot_outputs()
-        if left_port:
-            break
-        time.sleep(1)
-    
-    if not left_port:
-        print("[AutoRestart] Could not find ListenerBot ports - make sure listenerbot.service is running")
-        return
-    
-    print(f"[AutoRestart] Monitoring ListenerBot port: {left_port}")
-    
-    state_singing = False
-    silence_start = None
-    
-    print(f"[AutoRestart] Monitor started. Threshold: {FIXED_THRESHOLD_DB} dB")
-    
-    while not auto_restart_stop.is_set():
-        with auto_restart_lock:
-            is_armed = auto_restart_armed
-        
-        if not is_armed:
-            time.sleep(CHECK_INTERVAL)
-            state_singing = False  # Reset when disarmed
-            silence_start = None
-            continue
-        
-        try:
-            # Record short sample using jack_capture
-            tmp_path = f"/tmp/autorestart_sample_{os.getpid()}.wav"
-            cmd = [
-                'jack_capture',
-                '-d', '0.5',  # 0.5 seconds
-                '-f', 'wav',
-                '--port', left_port,
-                tmp_path
-            ]
-            
-            proc = subprocess.run(cmd, capture_output=True, timeout=3, env=_pw_env())
-            
-            if proc.returncode == 0 and os.path.exists(tmp_path):
-                with open(tmp_path, 'rb') as f:
-                    f.seek(44)  # Skip WAV header
-                    data = f.read()
-                os.remove(tmp_path)
-                
-                db = calculate_rms_db(data)
-                
-                # Use fixed threshold
-                threshold = FIXED_THRESHOLD_DB
-                
-                # State machine
-                if not state_singing:
-                    if db > threshold:
-                        print(f"[AutoRestart] 🎤 SINGING DETECTED: {db:.1f} dB (threshold: {threshold:.1f} dB)")
-                        state_singing = True
-                        silence_start = None
-                else:
-                    if db <= threshold:
-                        if silence_start is None:
-                            print(f"[AutoRestart] 🤫 Silence started: {db:.1f} dB")
-                            silence_start = time.time()
-                        else:
-                            elapsed = time.time() - silence_start
-                            if elapsed >= SILENCE_DURATION_SECONDS:
-                                print(f"[AutoRestart] ⏰ Silence for {elapsed:.1f}s - RESTARTING")
-                                # Restart track
-                                with state['lock']:
-                                    now = state['now']
-                                if now:
-                                    stop_playback()
-                                    time.sleep(0.1)
-                                    start_playback(now)
-                                # Reset state
-                                state_singing = False
-                                silence_start = None
-                                # Disarm after restart
-                                with auto_restart_lock:
-                                    auto_restart_armed = False
-                                print("[AutoRestart] ✅ Disarmed after restart")
-                    else:
-                        if silence_start is not None:
-                            print(f"[AutoRestart] 🎤 Singing resumed: {db:.1f} dB")
-                        silence_start = None
-            
-        except Exception as e:
-            print(f"[AutoRestart] Error: {e}")
-        
-        time.sleep(CHECK_INTERVAL)
-
-def start_silence_monitor():
-    """Start the silence monitor thread."""
-    global auto_restart_thread, auto_restart_stop
-    auto_restart_stop.clear()
-    auto_restart_thread = threading.Thread(target=silence_monitor_thread, daemon=True)
-    auto_restart_thread.start()
-    print("[AutoRestart] Monitor thread started")
+def run(cmd, stdin=None, check=True):
+    p = subprocess.run(cmd, input=stdin, text=False if stdin is not None else True,
+                       capture_output=True)
+    if check and p.returncode != 0:
+        raise RuntimeError(f"Command failed ({p.returncode}): {cmd}\n{p.stderr.decode() if isinstance(p.stderr, (bytes, bytearray)) else p.stderr}")
+    return p
 
 def list_wavs(limit=200):
+    # Only files, wav/WAV
     cmd = ['rclone','lsf','-R',RCLONE_REMOTE,'--files-only','--include','*.wav','--include','*.WAV','--include','*.mp3','--include','*.MP3'] + RCLONE_FLAGS
     p = subprocess.run(cmd, text=True, capture_output=True)
     if p.returncode != 0:
@@ -232,15 +84,15 @@ def stop_playback():
                 pass
 
 def start_playback(relpath):
-    """Start playback into Jamulus via PipeWire."""
+    """Start playback into Jamulus via JACK.
+
+    Uses rclone to fetch the file under RCLONE_REMOTE, decodes (if needed) to WAV,
+    then plays via jack-play (jack-tools)."""
     stop_playback()
-    
-    # Note: We don't disarm here - user may have armed before playing
-    # The arm state persists until restart or manual disarm
 
     full = f"{RCLONE_REMOTE.rstrip('/')}/{relpath.lstrip('/')}"
 
-    import hashlib, tempfile
+    import hashlib, tempfile, time
     from pathlib import Path
 
     ext = (relpath.rsplit('.', 1)[-1].lower() if '.' in relpath else 'wav')
@@ -250,22 +102,33 @@ def start_playback(relpath):
     src_path = tmpdir / f"src_{h}.{ext}"
     wav_path = tmpdir / f"play_{h}.wav"
 
+    # Fetch source to local file (streaming; avoids holding in memory)
     rclone_cmd = ['rclone','cat',full] + RCLONE_FLAGS
     with open(src_path, 'wb') as f:
         r = subprocess.run(rclone_cmd, stdout=f, stderr=subprocess.PIPE)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or b'').decode('utf-8', errors='replace') or 'rclone cat failed')
 
-    ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-af','volume=0.5','-ac','2','-ar','48000', str(wav_path)]
+    # Decode/normalize to 48k WAV stereo (Jamulus-friendly, easy L/R routing)
+    ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-ac','2','-ar','48000', str(wav_path)]
     d = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
     if d.returncode != 0:
         raise RuntimeError(d.stderr.strip() or 'ffmpeg decode failed')
 
-    play_cmd = ['pw-cat', '-p', '--target', '0', '--latency', '200ms', '--volume', '0.5',
-                '--properties', 'node.name=trackbot_player', '--properties', 'media.role=Music', str(wav_path)]
+    # Play via PipeWire (pw-cat) and explicitly link to the injector inputs.
+    # This avoids JACK timing glitches we observed with gst jackaudiosink on this VPS.
+    # We set node.name=trackbot_player so we can find/link the ports deterministically.
+    play_cmd = [
+        'pw-cat', '-p',
+        '--target', '0',
+        '--latency', '200ms',
+        '--properties', 'node.name=trackbot_player',
+        '--properties', 'media.role=Music',
+        str(wav_path)
+    ]
     proc = subprocess.Popen(play_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=_pw_env())
 
-    # Link to Jamulus
+    # Wait briefly for PipeWire ports to appear, then link to injector inputs
     out_l = None
     out_r = None
     for _ in range(60):
@@ -273,6 +136,7 @@ def start_playback(relpath):
         if out.returncode == 0:
             for ln in out.stdout.splitlines():
                 ln = ln.strip()
+                # pw-cat ports are typically named like: trackbot_player:output_FL / output_FR
                 if ln == 'trackbot_player:output_FL':
                     out_l = ln
                 elif ln == 'trackbot_player:output_FR':
@@ -284,27 +148,223 @@ def start_playback(relpath):
     if out_l and out_r:
         subprocess.run(['pw-link', out_l, 'Jamulus Injector-bot:input left'], capture_output=True, text=True, env=_pw_env())
         subprocess.run(['pw-link', out_r, 'Jamulus Injector-bot:input right'], capture_output=True, text=True, env=_pw_env())
+    else:
+        with state['lock']:
+            state['last_err'] = 'pw-cat started but no PipeWire ports found (trackbot_player:output_FL/FR)'
 
     with state['lock']:
         state['proc'] = proc
         state['now'] = relpath
-    
-    # Auto-arm after 6 seconds (gives time to start singing)
-    def delayed_arm():
-        time.sleep(6)
-        global auto_restart_armed
-        with auto_restart_lock:
-            auto_restart_armed = True
-        print("[AutoRestart] 🔔 AUTO-ARMED after 6 seconds!")
-    
-    threading.Thread(target=delayed_arm, daemon=True).start()
-    print("[AutoRestart] Will auto-arm in 6 seconds...")
 
-def run(cmd, stdin=None, check=True):
-    p = subprocess.run(cmd, input=stdin, text=False if stdin is not None else True, capture_output=True)
-    if check and p.returncode != 0:
-        raise RuntimeError(f"Command failed ({p.returncode}): {cmd}\n{p.stderr.decode() if isinstance(p.stderr, (bytes, bytearray)) else p.stderr}")
-    return p
+
+
+def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25):
+    """Generate a mono 16-bit PCM WAV metronome track.
+
+    Sound: low thump (80Hz sine burst with decay) once per beat.
+    """
+    beat_hz = bpm / 60.0
+    frames = int(seconds * sr)
+    click_len = int(0.12 * sr)  # 120ms
+    # Allow slightly >1.0 for a bit more headroom; hard-clipped below
+    amp = max(0.0, min(1.5, float(volume)))
+
+    buf = bytearray()
+    for i in range(frames):
+        t = i / sr
+        phase = (t * beat_hz) % 1.0
+        if phase < (click_len / sr):
+            x = phase * sr
+            env = math.exp(-7.0 * (x / click_len))
+            # Lower fundamental for a deeper "thump" + a touch of 2nd harmonic
+            f0 = 55.0
+            sample = amp * env * (
+                0.90 * math.sin(2 * math.pi * f0 * (x / sr)) +
+                0.25 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
+            )
+        else:
+            sample = 0.0
+        v = int(max(-1.0, min(1.0, sample)) * 32767)
+        buf += int(v).to_bytes(2, 'little', signed=True)
+
+    with wave.open(wav_path, 'wb') as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(bytes(buf))
+
+
+
+def _pw_env():
+    env = os.environ.copy()
+    # systemd user services sometimes miss XDG_RUNTIME_DIR when lingered
+    env.setdefault('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
+    return env
+
+
+def _connect_port_to_jamulus(port: str):
+    # Ensure Jamulus injector inputs are not accidentally fed from dummy capture ports.
+    try:
+        subprocess.run(['pw-jack','jack_disconnect', 'system:capture_1', JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-jack','jack_disconnect', 'system:capture_2', JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+    except Exception:
+        pass
+    subprocess.run(['pw-jack','jack_connect', port, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
+    subprocess.run(['pw-jack','jack_connect', port, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+
+
+
+def _apply_metronome_now(bpm: int, volume: float):
+    """Apply metronome change immediately (restarts the audio process)."""
+    global metronome_proc, metronome_bpm, metronome_volume, metronome_seq
+
+    bpm = int(bpm)
+    if bpm < 40: bpm = 40
+    if bpm > 240: bpm = 240
+    vol = float(volume)
+    if vol < 0: vol = 0.0
+    if vol > 1.5: vol = 1.5
+
+    with metronome_lock:
+        metronome_seq += 1
+        my_seq = metronome_seq
+        metronome_volume = vol
+
+    # Stop existing instance before starting a new one
+    stop_metronome()
+
+    # Generating a huge WAV on every slider move can block for tens of seconds.
+    # Cache a shorter file per BPM and only (re)generate when missing.
+    wav_path = f"/tmp/trackbot_metro_{bpm}.wav"
+    try:
+        if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
+            _generate_click_wav(wav_path, bpm=bpm, seconds=60, sr=48000, volume=1.0)
+    except Exception:
+        # If generation fails for any reason, fall back to a small file
+        _generate_click_wav(wav_path, bpm=bpm, seconds=15, sr=48000, volume=1.0)
+
+    cmd = [
+        'pw-cat', '-p',
+        '--target', '0',
+        '--latency', '200ms',
+        '--properties', 'node.name=trackbot_metro',
+        '--properties', 'media.role=Metronome',
+        '--volume', f'{vol}',
+        wav_path,
+    ]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=_pw_env())
+
+    with metronome_lock:
+        if my_seq != metronome_seq:
+            try: proc.terminate()
+            except Exception: pass
+            return
+        metronome_proc = proc
+        metronome_bpm = bpm
+
+    # Link ports asynchronously so start feels immediate; retry for a few seconds.
+    def _link_async(seq_token: int):
+        deadline = time.time() + 6.0
+        out_l = out_r = out_mono = None
+        while time.time() < deadline:
+            with metronome_lock:
+                if seq_token != metronome_seq:
+                    return
+            outp = subprocess.run(['pw-link', '-o'], capture_output=True, text=True, env=_pw_env())
+            if outp.returncode == 0:
+                for ln in outp.stdout.splitlines():
+                    ln = ln.strip()
+                    if ln == 'trackbot_metro:output_FL': out_l = ln
+                    elif ln == 'trackbot_metro:output_FR': out_r = ln
+                    elif ln == 'trackbot_metro:output_MONO': out_mono = ln
+            if out_l and out_r:
+                subprocess.run(['pw-link', out_l, 'Jamulus Injector-bot:input left'], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_r, 'Jamulus Injector-bot:input right'], capture_output=True, text=True, env=_pw_env())
+                return
+            if out_mono:
+                subprocess.run(['pw-link', out_mono, 'Jamulus Injector-bot:input left'], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_mono, 'Jamulus Injector-bot:input right'], capture_output=True, text=True, env=_pw_env())
+                return
+            time.sleep(0.1)
+        with state['lock']:
+            state['last_err'] = 'Metronome: PipeWire ports not found (trackbot_metro:output_*).'
+
+    threading.Thread(target=_link_async, args=(my_seq,), daemon=True).start()
+
+def _ensure_metronome_debouncer():
+    global metronome_debounce_thread
+    if metronome_debounce_thread and metronome_debounce_thread.is_alive():
+        return
+
+    def _loop():
+        # Wait for updates, then apply after a quiet period.
+        while True:
+            metronome_debounce_evt.wait()
+            metronome_debounce_evt.clear()
+            # quiet period debounce
+            while True:
+                time.sleep(metronome_debounce_delay)
+                if metronome_debounce_evt.is_set():
+                    metronome_debounce_evt.clear()
+                    continue
+                break
+
+            with metronome_lock:
+                bpm = metronome_pending.get('bpm')
+                vol = metronome_pending.get('vol')
+
+            if bpm is None or vol is None:
+                continue
+
+            try:
+                _apply_metronome_now(bpm, vol)
+            except Exception as e:
+                with state['lock']:
+                    state['last_err'] = f"Metronome update failed: {e}"
+
+    metronome_debounce_thread = threading.Thread(target=_loop, daemon=True)
+    metronome_debounce_thread.start()
+
+
+def start_metronome(bpm: int, volume: float = 0.25):
+    """Start/update metronome immediately.
+
+    The web UI already debounces slider events, so we don't need extra
+    debounce logic here.
+    """
+    _apply_metronome_now(bpm, volume)
+
+def stop_metronome():
+    """Stop metronome precisely: kill pw-cat and unlink its ports."""
+    global metronome_proc
+
+    with metronome_lock:
+        proc = metronome_proc
+        metronome_proc = None
+
+    # Unlink any existing metro links (ignore errors).
+    try:
+        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_FL', 'Jamulus Injector-bot:input left'],
+                       capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_FR', 'Jamulus Injector-bot:input right'],
+                       capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_MONO', 'Jamulus Injector-bot:input left'],
+                       capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_MONO', 'Jamulus Injector-bot:input right'],
+                       capture_output=True, text=True, env=_pw_env())
+    except Exception:
+        pass
+
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
 
 class Handler(BaseHTTPRequestHandler):
 
@@ -316,179 +376,182 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body_b)
 
+    def do_HEAD(self):
+        # Simple health check; mirrors GET without body
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+
     def do_GET(self):
         try:
             u = urllib.parse.urlparse(self.path)
             q = urllib.parse.parse_qs(u.query, keep_blank_values=True)
-            
-            if u.path == '/api/autorestart/arm':
-                global auto_restart_armed
-                with auto_restart_lock:
-                    auto_restart_armed = True
-                print("[HTTP] Auto-restart ARMED")
-                self._send(200, json.dumps({'ok': True, 'armed': True}), ctype='application/json')
+            if u.path == '/api/jamulus/restart':
+                try:
+                    # Gentle + async: stop any playback, then restart Jamulus client service.
+                    # Do not block HTTP response on GUI startup.
+                    stop_playback()
+                    cmd = ['systemctl','--user','restart','jamulus-client.service']
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    self._send(200, json.dumps({'ok': True}), ctype='application/json; charset=utf-8')
+                except Exception as e:
+                    self._send(500, json.dumps({'ok': False, 'error': str(e)}), ctype='application/json; charset=utf-8')
                 return
-            
-            if u.path == '/api/autorestart/disarm':
-                with auto_restart_lock:
-                    auto_restart_armed = False
-                print("[HTTP] Auto-restart DISARMED")
-                self._send(200, json.dumps({'ok': True, 'armed': False}), ctype='application/json')
-                return
-            
-            if u.path == '/api/autorestart/status':
-                with auto_restart_lock:
-                    is_armed = auto_restart_armed
-                self._send(200, json.dumps({'ok': True, 'armed': is_armed}), ctype='application/json')
-                return
-
             if u.path == '/api/restart':
+                # Restart current playback from beginning
                 with state['lock']:
                     now = state['now']
                 if now:
                     stop_playback()
                     time.sleep(0.1)
                     start_playback(now)
-                    self._send(200, json.dumps({'ok': True, 'restarted': now}), ctype='application/json')
+                    self._send(200, json.dumps({'ok': True, 'restarted': now}), ctype='application/json; charset=utf-8')
                 else:
-                    self._send(400, json.dumps({'ok': False, 'error': 'Nothing playing to restart'}), ctype='application/json')
+                    self._send(400, json.dumps({'ok': False, 'error': 'Nothing playing to restart'}), ctype='application/json; charset=utf-8')
                 return
-            
+            if u.path == '/api/metronome/start':
+                bpm = int(q.get('bpm', ['120'])[0] or 120)
+                vol = float(q.get('vol', ['0.25'])[0] or 0.25)
+                start_metronome(bpm, vol)
+                self._send(200, json.dumps({'ok': True, 'bpm': bpm, 'vol': vol}), ctype='application/json; charset=utf-8')
+                return
+            if u.path == '/api/metronome/stop':
+                stop_metronome()
+                self._send(200, json.dumps({'ok': True}), ctype='application/json; charset=utf-8')
+                return
+            if u.path == '/api/metronome/status':
+                proc = metronome_proc
+                running = bool(proc and proc.poll() is None)
+                if not running:
+                    # Fallback: if a pw-cat metronome process exists, treat as running (fixes UI realtime sliders)
+                    try:
+                        running = (subprocess.run(["pgrep","-u","nds","-f","pw-cat -p .*node.name=trackbot_metro"], capture_output=True).returncode == 0)
+                    except Exception:
+                        pass
+                with state['lock']:
+                    last_err = state.get('last_err')
+                self._send(200, json.dumps({'ok': True, 'running': running, 'bpm': metronome_bpm, 'vol': metronome_volume, 'last_err': last_err}), ctype='application/json; charset=utf-8')
+                return
             if u.path == '/api/playback/status':
                 with state['lock']:
                     proc = state['proc']
                     now = state['now']
                 running = bool(proc and proc.poll() is None)
-                with auto_restart_lock:
-                    is_armed = auto_restart_armed
-                self._send(200, json.dumps({'ok': True, 'running': running, 'now': now, 'armed': is_armed}), ctype='application/json')
+                if not running:
+                    # Fallback: if a pw-cat metronome process exists, treat as running (fixes UI realtime sliders)
+                    try:
+                        running = (subprocess.run(["pgrep","-u","nds","-f","pw-cat -p .*node.name=trackbot_metro"], capture_output=True).returncode == 0)
+                    except Exception:
+                        pass
+                self._send(200, json.dumps({'ok': True, 'running': running, 'now': now}), ctype='application/json; charset=utf-8')
                 return
-
-            if u.path == '/play':
-                f = q.get('file', [''])[0]
-                if not f:
-                    self._send(400, 'Missing file')
-                    return
-                start_playback(f)
-                self._send(302, '', ctype='text/plain')
-                self.send_header('Location', '/')
+            if u.path == '/api/jamulus/hardreset':
+                try:
+                    stop_playback()
+                    cmds = [
+                        ['systemctl','--user','stop','jamulus-client.service'],
+                        ['pkill','-f','/usr/bin/Jamulus'],
+                        ['pkill','-x','Jamulus'],
+                        ['sleep','2'],
+                        ['systemctl','--user','start','jamulus-client.service'],
+                    ]
+                    for cmd in cmds:
+                        r = subprocess.run(cmd, capture_output=True, text=True)
+                        if cmd[0] == 'pkill' and r.returncode in (0,1):
+                            continue
+                        if r.returncode != 0:
+                            err = (r.stderr or r.stdout or '').strip()
+                            self._send(500, json.dumps({'ok': False, 'error': err, 'cmd': cmd}), ctype='application/json; charset=utf-8')
+                            return
+                    self._send(200, json.dumps({'ok': True}), ctype='application/json; charset=utf-8')
+                except Exception as e:
+                    self._send(500, json.dumps({'ok': False, 'error': str(e)}), ctype='application/json; charset=utf-8')
                 return
-            
+            if u.path == '/api/list':
+                # JSON directory listing within RCLONE_REMOTE root
+                sub = (q.get('path',[''])[0] or '').lstrip('/')
+                # normalize: allow '' or 'foo/bar/'
+                base = RCLONE_REMOTE.rstrip('/')
+                target = base + ('/' + sub if sub else '')
+                try:
+                    # dirs
+                    cmd_dirs = ['rclone','lsf',target,'--dirs-only'] + RCLONE_FLAGS
+                    pd = subprocess.run(cmd_dirs, text=True, capture_output=True)
+                    if pd.returncode != 0:
+                        raise RuntimeError(pd.stderr.strip() or 'rclone dirs failed')
+                    dirs = sorted([d.strip().rstrip('/') for d in pd.stdout.splitlines() if d.strip()])
+                    # wav files
+                    cmd_files = ['rclone','lsf',target,'--files-only','--include','*.wav','--include','*.WAV','--include','*.mp3','--include','*.MP3'] + RCLONE_FLAGS
+                    pf = subprocess.run(cmd_files, text=True, capture_output=True)
+                    if pf.returncode != 0:
+                        raise RuntimeError(pf.stderr.strip() or 'rclone files failed')
+                    files = sorted([f.strip() for f in pf.stdout.splitlines() if f.strip()])
+                    resp = {'ok': True, 'path': sub, 'dirs': dirs, 'files': files, 'root': RCLONE_REMOTE}
+                    self._send(200, json.dumps(resp), ctype='application/json; charset=utf-8')
+                except Exception as e:
+                    resp = {'ok': False, 'path': sub, 'error': str(e), 'root': RCLONE_REMOTE}
+                    self._send(500, json.dumps(resp), ctype='application/json; charset=utf-8')
+                return
             if u.path == '/stop':
                 stop_playback()
-                self._send(302, '', ctype='text/plain')
-                self.send_header('Location', '/')
+                self.send_response(302)
+                self.send_header('Location','/')
+                self.end_headers()
+                return
+            if u.path == '/play':
+                f = q.get('file',[None])[0]
+                if not f:
+                    self._send(400,'missing file')
+                    return
+                start_playback(f)
+                self.send_response(302)
+                self.send_header('Location','/')
+                self.end_headers()
                 return
 
-            # List tracks
-            try:
-                files = list_wavs(200)
-            except Exception as e:
-                files = []
-                with state['lock']:
-                    state['last_err'] = str(e)
-
-            # Build UI
+            # index
             with state['lock']:
-                last_err = state.get('last_err')
-            
-            # Check status
-            result = subprocess.run(['pw-link', '-l'], capture_output=True, text=True, env=_pw_env())
-            links_ok = 'trackbot_player:output_FL' in result.stdout and 'Jamulus Injector-bot:input left' in result.stdout
-            status_msg = "Ready" if links_ok else "Waiting for PipeWire..."
+                now = state['now']
+                last_err = state['last_err']
 
-            rows = ''.join(f'<li><a href="/play?file={html.escape(f)}">{html.escape(f)}</a></li>' for f in files[:100])
-            err_html = f'<p class="err">{html.escape(str(last_err))}</p>' if last_err else ''
+            try:
+                wavs = list_wavs()
+            except Exception as e:
+                wavs = []
+                last_err = str(e)
+                with state['lock']:
+                    state['last_err'] = last_err
 
-            body = f'''<!doctype html>
-<html><head><meta charset="utf-8"><title>TrackBot</title>
-<style>
-body {{ font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }}
-h1 {{ font-size: 1.5rem; }}
-ul {{ line-height: 1.6; max-height: 60vh; overflow: auto; }}
-li {{ margin: .25rem 0; }}
-.err {{ color: #c00; }}
-.status {{ padding: .5rem; background: #f0f0f0; border-radius: 4px; margin: 1rem 0; }}
-.controls {{ margin: 1rem 0; padding: 1rem; background: #f8f8f8; border-radius: 8px; }}
-button {{ padding: 0.5rem 1rem; margin: 0.25rem; font-size: 1rem; cursor: pointer; }}
-.armed {{ background: #ff9800; color: white; font-weight: bold; }}
-.disarmed {{ background: #4caf50; color: white; }}
-.warning {{ background: #fff3cd; padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; }}
-</style></head>
-<body>
-<h1>🎵 TrackBot</h1>
-<div class="status">Status: {html.escape(status_msg)}</div>
+            rows = []
+            for w in wavs:
+                esc = html.escape(w)
+                href = '/play?file=' + urllib.parse.quote(w)
+                rows.append(f'<li><a href="{href}">{esc}</a></li>')
+            now_html = html.escape(now) if now else '(nothing)'
 
-<div class="controls">
-  <h3>Playback Control</h3>
-  <button onclick="fetch('/stop').then(()=>location.reload())">⏹ Stop</button>
-  <button onclick="fetch('/api/restart').then(()=>location.reload())">🔄 Restart Track</button>
-  
-  <h3>Auto-Restart</h3>
-  <div id="arm-status" class="warning">
-    Checking status...
-  </div>
-  <button id="arm-btn" onclick="toggleArm()" class="disarmed">Arm Auto-Restart</button>
-  <p><small>Auto-arms 6 seconds after track starts. Track will restart after 6 seconds of silence. Click button to arm/disarm manually.</small></p>
-</div>
-
-<h3>Tracks</h3>
-<ol>{rows}</ol>
-{err_html}
-
-<script>
-async function updateStatus() {{
-  try {{
-    const resp = await fetch('/api/playback/status');
-    const data = await resp.json();
-    const armStatus = document.getElementById('arm-status');
-    const armBtn = document.getElementById('arm-btn');
-    if (data.armed) {{
-      armStatus.innerHTML = '🔴 <b>ARMED</b> - Will restart after silence';
-      armStatus.className = 'warning';
-      armStatus.style.background = '#ffebee';
-      armBtn.innerText = 'Disarm Auto-Restart';
-      armBtn.className = 'armed';
-    }} else {{
-      armStatus.innerHTML = '🟢 <b>DISARMED</b> - Click to arm after singing starts';
-      armStatus.className = 'warning';
-      armStatus.style.background = '#e8f5e9';
-      armBtn.innerText = 'Arm Auto-Restart';
-      armBtn.className = 'disarmed';
-    }}
-  }} catch (e) {{
-    console.error('Status check failed:', e);
-  }}
-}}
-
-async function toggleArm() {{
-  const btn = document.getElementById('arm-btn');
-  const isArmed = btn.className === 'armed';
-  try {{
-    if (isArmed) {{
-      await fetch('/api/autorestart/disarm');
-    }} else {{
-      await fetch('/api/autorestart/arm');
-    }}
-    updateStatus();
-  }} catch (e) {{
-    alert('Failed to toggle: ' + e);
-  }}
-}}
-
-// Update status every 2 seconds
-setInterval(updateStatus, 2000);
-updateStatus();
-</script>
-
-</body></html>'''
+            body = f"""<!doctype html>
+<html><head><meta charset=utf-8><title>TrackBot</title>
+<style>body{{font-family:system-ui,Arial,sans-serif;max-width:900px;margin:20px auto;padding:0 12px}} code{{background:#f4f4f4;padding:2px 4px;border-radius:4px}} .err{{color:#b00020}}</style>
+</head><body>
+<h1>TrackBot</h1>
+<p><b>Remote:</b> <code>{html.escape(RCLONE_REMOTE)}</code></p>
+<p><b>Now playing:</b> <code>{now_html}</code> &nbsp; <a href="/stop">Stop</a></p>
+"""
+            if last_err:
+                body += f"<p class=err><b>Last error:</b> {html.escape(last_err)}</p>"
+            body += "<h2>WAVs</h2><ol>" + "\n".join(rows) + "</ol>"
+            body += "</body></html>"
             self._send(200, body)
         except Exception as e:
-            import traceback
-            err = traceback.format_exc()
-            self._send(500, f'<pre>{html.escape(err)}</pre>')
+            self._send(500, f"error: {html.escape(str(e))}")
+
+    def log_message(self, fmt, *args):
+        return
+
 
 if __name__ == '__main__':
-    print(f"Starting TrackBot on http://{HOST}:{PORT}")
-    start_silence_monitor()
-    HTTPServer((HOST, PORT), Handler).serve_forever()
+    print(f"TrackBot web running on http://{HOST}:{PORT}/")
+    print(f"Using rclone remote: {RCLONE_REMOTE} (flags: {' '.join(RCLONE_FLAGS)})")
+    print(f"Jamulus inputs: {JAMULUS_IN_L} / {JAMULUS_IN_R}")
+    httpd = HTTPServer((HOST, PORT), Handler)
+    httpd.serve_forever()
