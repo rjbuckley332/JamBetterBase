@@ -542,14 +542,70 @@
         }
 
         function updateRecordingButton(state) {
+            // Update Control tab button
             const btn = document.getElementById("recordToggleBtn");
-            if (!btn) return;
-            if (state === "ON") {
-                btn.textContent = "Stop Recording";
-                btn.className = "btn btn-danger";
-            } else {
-                btn.textContent = "Start Recording";
-                btn.className = "btn btn-success";
+            if (btn) {
+                if (state === "ON") {
+                    btn.textContent = "Stop Recording";
+                    btn.className = "btn btn-danger";
+                } else {
+                    btn.textContent = "Start Recording";
+                    btn.className = "btn btn-success";
+                }
+            }
+            
+            // Update Backing Track tab button
+            const tracksBtn = document.getElementById("tracksRecordBtn");
+            const tracksStatus = document.getElementById("tracksRecordStatus");
+            if (tracksBtn) {
+                if (state === "ON") {
+                    tracksBtn.textContent = "Stop Recording";
+                    tracksBtn.className = "btn btn-danger";
+                    tracksBtn.onclick = () => stopRecordingFromTracks();
+                } else {
+                    tracksBtn.textContent = "Start Recording";
+                    tracksBtn.className = "btn btn-success";
+                    tracksBtn.onclick = () => startRecordingFromTracks();
+                }
+            }
+            if (tracksStatus) {
+                if (state === "ON") {
+                    tracksStatus.textContent = "🔴 Recording in progress...";
+                    tracksStatus.style.display = "block";
+                    tracksStatus.style.color = "#d9534f";
+                } else {
+                    tracksStatus.style.display = "none";
+                }
+            }
+        }
+        
+        // Stop recording from Backing Track tab
+        async function stopRecordingFromTracks() {
+            try {
+                const res = await apiFetch("/toggle-recording", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "stop" })
+                });
+                
+                if (!res.ok) {
+                    const msg = await res.text();
+                    alert(msg || "Failed to stop recording");
+                    return;
+                }
+                
+                // Stop the backing track
+                try { 
+                    await apiFetch('/wav/stop', { method: 'POST' }); 
+                } catch (e) { 
+                    console.warn('wav stop failed', e); 
+                }
+                
+                updateRecordingButton("OFF");
+                setTimeout(refreshStatuses, 1000);
+            } catch (err) {
+                console.error(err);
+                alert("Request error.");
             }
         }
 
