@@ -10,10 +10,9 @@
             background: url(/static/jambetter_bg.jpg) center 80%/cover no-repeat fixed;
             font-family: Arial, sans-serif;
         }
-.appHeader { margin: -4px -4px 14px -4px; }
+        .appHeader { margin: -4px -4px 14px -4px; }
         .appLogo { width: 100%; max-height: 220px; object-fit: contain;border-radius: 10px; display:block; }
-        .tabs { position: relative; z-index: 50; }
-
+        
         .container {
             position: relative;
             z-index: 50;
@@ -26,70 +25,107 @@
             margin: 260px auto 20px auto;
             padding: 20px;
             border-radius: 8px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.18);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.18); 
+            border: 1px solid rgba(255,255,255,0.18);
         }
-        .status-label {
-            padding: 4px 8px;
-            border-radius: 4px;
-            color: white;
-            font-weight: bold;
-        }
-        .state-on { background-color: #d9534f; }
-        .state-off { background-color: #5cb85c; }
-        .session-active { background-color: #0275d8; }
-        .session-idle { background-color: #777; }
-        .locked { background-color: #f0ad4e; }
-        .unlocked { background-color: #5bc0de; }
-        .btn { margin: 2px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; }
+        
+        .btn { margin: 2px; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         .btn-success { background-color: #5cb85c; color: white; }
         .btn-danger { background-color: #d9534f; color: white; }
         .btn-warning { background-color: #f0ad4e; color: white; }
         .btn-info { background-color: #5bc0de; color: white; }
-        .btn-sm { font-size: 0.8em; padding: 4px 8px; }
-        .session-row { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; }
-        .session-name { flex: 1; cursor: pointer; }
-
-        .tabs { display:flex; gap:8px; margin:12px 0 16px 0; flex-wrap:wrap; }
-        .tabbtn { pointer-events: auto; z-index: 60; position: relative; padding:8px 12px; border:1px solid #ddd; background:#f3f3f3; border-radius:999px; cursor:pointer; }
-        .tabbtn.active { background:#0275d8; color:#fff; border-color:#0275d8; }
-        .tabpanel { display:none; }
-        .tabpanel.active { display:block; }
-
-.btn:active { transform: translateY(1px); filter: brightness(0.95); }
-.btn.busy { opacity: 0.65; pointer-events: none; }
-
-        /* Backing Track styling */
-        #panel-tracks .tracksWrap { max-width: 900px; margin: 0 auto; }
-
-        /* Shared glass pane */
-        .glassPane{
-            background: rgba(0,0,0,0.22);
-            color: #fff;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+        .btn-sm { font-size: 0.85em; padding: 6px 12px; }
+        
+        h2 { margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 10px; }
+        h3 { margin: 15px 0 10px 0; font-size: 16px; }
+        
+        .section {
+            background: rgba(0,0,0,0.2);
             border-radius: 8px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.18);
-            border: 1px solid rgba(255,255,255,0.18);
+            padding: 15px;
+            margin-bottom: 15px;
         }
-
-        /* Site brand in header */
-        .tabsPane { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-        .siteBrand { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; user-select: none; }
-
-        /* Upload section styling - green buttons together on right */
-        .upload-section {
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+        }
+        
+        .slider-group {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            margin: 5px 0;
         }
-        .upload-section input[type="file"] {
-            color: #fff !important;
+        
+        input[type="range"] {
+            flex: 1;
             max-width: 200px;
         }
-        .upload-section input[type="file"]::file-selector-button {
-            color: #111;
+        
+        .status-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 10px 0;
         }
-
+        
+        .status-item {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .file-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+            padding: 6px 10px;
+            background: rgba(0,0,0,0.15);
+            border-radius: 4px;
+        }
+        
+        .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .file-actions { display: flex; gap: 5px; }
+        
+        .browser-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .upload-section { display: flex; align-items: center; gap: 8px; }
+        
+        #wavFiles { max-height: 300px; overflow-y: auto; }
+        
+        .session-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 5px 0;
+            padding: 8px;
+            background: rgba(0,0,0,0.15);
+            border-radius: 4px;
+        }
+        
+        .session-name { flex: 1; cursor: pointer; }
+        
         /* Flashing red for loading state */
         @keyframes flash-red {
             0%, 100% { background-color: #d9534f; }
@@ -99,202 +135,98 @@
             animation: flash-red 1s infinite;
             color: white !important;
         }
-
-        /* File list styling */
-        .file-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 6px;
-            padding: 4px 8px;
-            background: rgba(0,0,0,0.15);
-            border-radius: 4px;
-        }
-        .file-name {
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-family: monospace;
-            font-size: 13px;
-        }
-        .file-actions {
-            display: flex;
-            gap: 6px;
-        }
-
-        /* Folder list styling */
-        #wavDirs button.btn {
-            color: #FFD400 !important;
-            font-weight: 700;
-            font-size: 15px;
-            background: rgba(0,0,0,0.18) !important;
-            border: 1px solid rgba(255,255,255,0.18);
-            padding: 6px 8px;
-            margin-bottom: 4px;
-        }
-        #wavDirs button.btn:hover {
-            background: rgba(0,0,0,0.28) !important;
-        }
-
-        /* Navigation button row */
-        .nav-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 10px;
-        }
-        .nav-left {
-            display: flex;
-            gap: 6px;
-        }
-
-        /* File type icons */
-        .file-icon {
-            margin-right: 6px;
-            opacity: 0.8;
+        
+        .nav-left { display: flex; gap: 5px; }
+        
+        @media (max-width: 600px) {
+            .container { margin-top: 200px; padding: 15px; }
+            .input-group { flex-direction: column; align-items: stretch; }
+            input[type="text"] { width: 100%; box-sizing: border-box; }
         }
     </style>
 </head>
-<body style="background: url('/static/jambetter.jpg') center -50px/cover no-repeat fixed;">
+<body>
     <div class="container">
-
-  <div class="glassPane tabsPane">
-    <div class="tabs" style="pointer-events:auto;">
-      <button class="tabbtn active" id="tab-control" onclick="showTab('control')">Control</button>
-      <button class="tabbtn" id="tab-tracks" onclick="showTab('tracks')">Backing Track</button>
-    </div>
-    <div class="siteBrand" id="siteBrand">PipeDreamers</div>
-  </div>
-
-  <div class="tabpanel active" id="panel-control">
-
-    <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
-    <button class="btn btn-info" onclick="restartTrack()">Restart Track</button>
-    <button class="btn btn-warning" onclick="restartBotJamulus()">Restart Bot</button>
-    <button class="btn btn-danger" onclick="hardResetBotJamulus()">Hard Reset Bot</button>
-
-    <h3>Start New Session</h3>
-    <p>
-      Name (Optional): <input type="text" id="sessionNameInput" placeholder="Enter name before starting recording">
-    </p>
-
-    <div class="glassPane" style="background: rgba(255,255,255,0.38); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding:12px; border-radius:12px; margin-top:10px;">
-      <b>Metronome</b> (everyone hears it)
-      <div style="margin-top:6px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-        <label>BPM: <span id="metroBpmLabel">120</span></label>
-        <label>Vol: <span id="metroVolLabel">25</span>%</label>
-        <input type="range" id="metroBpm" min="40" max="200" value="120" oninput="document.getElementById('metroBpmLabel').textContent=this.value; scheduleMetronomeUpdate();">
-        <input type="range" id="metroVol" min="0" max="100" value="25" oninput="document.getElementById('metroVolLabel').textContent=this.value; scheduleMetronomeUpdate();">
-        <button id="metroToggleBtn" class="btn btn-sm btn-success" onclick="toggleMetronome()">Start</button>
-      </div>
-    </div>
-
-    <h3>Saved Sessions</h3>
-    <p><small>(Click a name to reuse it in the input above)</small></p>
-    <div id="savedSessions"></div>
-
-  </div>
-
-  <div class="tabpanel" id="panel-tracks">
-    <div class="glassPane" style="padding:20px;">
-      <h3>Pick your backing track</h3>
-      <div style="margin-bottom:10px;">
-        <span>Selected backing track:</span> <code id="queuedWavDisplay">(none)</code>
-        <button id="playToggleBtn" class="btn btn-sm btn-success" onclick="togglePlayback()">Play Track</button>
-        <button class="btn btn-sm btn-info" onclick="restartTrack()">Restart Track</button>
-        <button class="btn btn-sm btn-warning" onclick="clearQueuedWav()">Clear Track</button>
-      </div>
-      
-      <!-- Recording section on Backing Track tab -->
-      <div style="margin:15px 0; padding:12px; background:rgba(0,0,0,0.25); border-radius:8px; border:1px solid rgba(255,255,255,0.2);">
-        <h4 style="margin:0 0 10px 0;">🎙️ Record Session</h4>
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-          <label>Session Name (required):</label>
-          <input type="text" id="tracksSessionName" placeholder="Enter session name before recording" style="flex:1; min-width:200px; padding:6px; border-radius:4px; border:1px solid #ccc;">
-          <button id="tracksRecordBtn" class="btn btn-success" onclick="startRecordingFromTracks()">Start Recording</button>
+        <div class="appHeader">
+            <img class="appLogo" src="/static/pipedreamers_logo.jpg" alt="PipeDreamers">
         </div>
-        <div id="tracksRecordStatus" style="margin-top:8px; font-size:13px; color:#5cb85c; display:none;"></div>
-      </div>
 
-      <div id="wavBrowser" style="margin-top:10px; padding:10px; border:1px solid rgba(255,255,255,0.35); border-radius:8px; background: transparent; display:flex; flex-direction:column; max-height:70vh;">
-        <div class="nav-row">
-          <div>
-            <b>Browse</b> <code id="wavPath">recordings/</code>
-          </div>
-          <div class="nav-left">
-            <button class="btn btn-sm" onclick="wavUp()">Up</button>
-            <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
-          </div>
-          <div class="upload-section">
-            <input type="file" id="tmpTrackUploadInput" accept="audio/*" onchange="try{document.getElementById('tmpTrackUploadName').textContent=this.files&&this.files[0]?this.files[0].name:'';}catch(e){}" />
-            <span id="tmpTrackUploadName" style="font-size:12px; opacity:0.85; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-            <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
-          </div>
-        </div>
-        <div id="wavErr" style="color:#b00020; margin-top:6px; display:none;"></div>
-
-        <div class="glassPane" style="margin-top:10px; padding:10px; flex:1; display:flex; flex-direction:column; min-height:400px;">
-          <div style="display:flex; gap:16px; flex:1;">
-            <div style="flex:1; display:flex; flex-direction:column; min-width:180px;">
-              <div style="font-weight:bold; margin-bottom:6px;">Folders</div>
-              <div id="wavDirs" style="flex:1; overflow:auto; min-height:100px;"></div>
+        <!-- SESSION & RECORDING -->
+        <div class="section">
+            <h2>🎙️ Session & Recording</h2>
+            <div class="input-group">
+                <label><b>Session Name:</b></label>
+                <input type="text" id="sessionNameInput" placeholder="Enter name before recording" style="flex:1;min-width:200px;">
+                <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
+                <button class="btn btn-warning" onclick="restartBotJamulus()">Restart Bot</button>
+                <button class="btn btn-warning" onclick="toggleLock()">Lock Session</button>
             </div>
-            <div style="flex:2; display:flex; flex-direction:column;">
-              <div style="font-weight:bold; margin-bottom:6px;">Files</div>
-              <div id="wavFiles" style="flex:1; overflow:auto; min-height:100px;"></div>
+            <div class="status-row">
+                <span id="recStatus" class="status-item" style="background:#777;">Recording: OFF</span>
+                <span id="jamStatus" class="status-item" style="background:#777;">Jamulus: Unknown</span>
+                <span id="lockStatus" class="status-item" style="background:#5bc0de;">Unlocked</span>
             </div>
-          </div>
         </div>
-      </div>
 
+        <!-- METRONOME -->
+        <div class="section">
+            <h3>🥁 Metronome (everyone hears it)</h3>
+            <div class="slider-group">
+                <label>BPM: <span id="bpmVal">120</span></label>
+                <input type="range" id="metroBpm" min="40" max="200" value="120" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
+                <label>Vol: <span id="volVal">25</span>%</label>
+                <input type="range" id="metroVol" min="0" max="100" value="25" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
+                <button id="metroToggleBtn" class="btn btn-success" onclick="toggleMetronome()">Start</button>
+            </div>
+        </div>
+
+        <!-- BACKING TRACK -->
+        <div class="section">
+            <h3>🎵 Backing Track</h3>
+            <div class="input-group">
+                <label><b>Selected:</b></label>
+                <code id="queuedWavDisplay" style="flex:1;">(none)</code>
+                <button id="playToggleBtn" class="btn btn-success" onclick="togglePlayback()">Play Track</button>
+                <button class="btn btn-info" onclick="restartTrack()">Restart Track</button>
+                <button class="btn btn-warning" onclick="clearQueuedWav()">Clear Track</button>
+            </div>
+            
+            <div id="wavBrowser" style="margin-top:15px;">
+                <div class="browser-header">
+                    <div><b>Browse:</b> <code id="wavPath">recordings/</code></div>
+                    <div class="nav-left">
+                        <button class="btn btn-sm" onclick="wavUp()">Up</button>
+                        <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
+                    </div>
+                    <div class="upload-section">
+                        <input type="file" id="tmpTrackUploadInput" accept="audio/*" style="max-width:150px;">
+                        <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
+                    </div>
+                </div>
+                <div id="wavFiles"></div>
+            </div>
+        </div>
+
+        <!-- SAVED SESSIONS -->
+        <div class="section">
+            <h3>💾 Saved Sessions</h3>
+            <p style="font-size:12px;opacity:0.8;margin:0 0 10px 0;">(Click a name to reuse it)</p>
+            <div id="savedSessions"></div>
+        </div>
     </div>
-  </div>
-
-</div>
 
     <script>
-		// Passcode gate disabled.
-		async function apiFetch(url, opts) {
-			return fetch(url, opts || {});
-
-        function setSiteBrandFromHost(){
-            try {
-                const el = document.getElementById('siteBrand');
-                if (!el) return;
-                const host = (window.location && window.location.hostname) ? window.location.hostname : '';
-                if (!host) return;
-                const sub = host.split('.')[0];
-                if (sub) el.textContent = sub;
-                try { document.title = sub + ' Jamulus Control'; } catch(e) {}
-            } catch(e) {}
+        // State
+        let recordingState = "OFF";
+        let metronomeRunning = false;
+        let playbackRunning = false;
+        let wavCurrentPath = "recordings/";
+        
+        // Simple API fetch
+        async function apiFetch(url, opts) {
+            return fetch(url, opts || {});
         }
-
-		}
-
-        function showTab(name) {
-            try { window.location.hash = name; } catch (e) {}
-            const tabs = ['control','tracks'];
-            for (const tname of tabs) {
-                const btn = document.getElementById('tab-' + tname);
-                const panel = document.getElementById('panel-' + tname);
-                if (!btn || !panel) continue;
-                const on = (tname === name);
-                btn.classList.toggle('active', on);
-                panel.classList.toggle('active', on);
-            }
-        }
-
-        function showTabFromHash(){
-            const h = (window.location.hash || '').replace('#', '').trim();
-            if (['tracks','control'].includes(h)) showTab(h);
-        }
-        window.addEventListener('hashchange', showTabFromHash);
-        window.addEventListener('load', () => { setSiteBrandFromHost(); showTabFromHash(); });
-
+        
         function setBusy(btn, busy, label) {
             if (!btn) return;
             if (busy) {
@@ -307,144 +239,18 @@
             }
         }
 
-        let playbackRunning = false;
-        let metronomeRunning = false;
-
-        async function refreshAudioStatuses() {
-            try {
-                const w = await apiFetch('/wav/status');
-                if (w.ok) {
-                    const wd = await w.json();
-                    playbackRunning = !!wd.running;
-                }
-            } catch (e) { /* ignore */ }
-
-            try {
-                const m = await apiFetch('/metronome/status');
-                if (m.ok) {
-                    const md = await m.json();
-                    metronomeRunning = !!md.running;
-                }
-            } catch (e) { /* ignore */ }
-
-            updatePlaybackButton();
-            updateMetronomeButton();
-        }
-
-        function updatePlaybackButton() {
-            const btn = document.getElementById('playToggleBtn');
-            if (!btn) return;
-            btn.textContent = playbackRunning ? 'Stop Track' : 'Play Track';
-            btn.classList.toggle('btn-warning', playbackRunning);
-            btn.classList.toggle('btn-success', !playbackRunning);
-        }
-
-        function updateMetronomeButton() {
-            const btn = document.getElementById('metroToggleBtn');
-            if (!btn) return;
-            btn.textContent = metronomeRunning ? 'Stop' : 'Start';
-            btn.classList.toggle('btn-warning', metronomeRunning);
-            btn.classList.toggle('btn-success', !metronomeRunning);
-        }
-
-        async function togglePlayback() {
-            const btn = document.getElementById('playToggleBtn');
-            if (!btn) return;
-            
-            if (playbackRunning) {
-                // Just stop - quick operation
-                setBusy(btn, true, 'Stopping...');
-                try {
-                    await apiFetch('/wav/stop', { method: 'POST' });
-                } finally {
-                    setBusy(btn, false);
-                    setTimeout(refreshAudioStatuses, 400);
-                }
-            } else {
-                // Starting playback - show flashing red while loading
-                btn.classList.add('btn-loading');
-                btn.textContent = 'Loading...';
-                btn.disabled = true;
-                try {
-                    await apiFetch('/wav/play-queued', { method: 'POST' });
-                    // Keep flashing until playback actually starts
-                    let attempts = 0;
-                    const checkInterval = setInterval(async () => {
-                        await refreshAudioStatuses();
-                        attempts++;
-                        if (playbackRunning || attempts > 30) { // Max 30 seconds
-                            clearInterval(checkInterval);
-                            btn.classList.remove('btn-loading');
-                            btn.disabled = false;
-                            updatePlaybackButton(playbackRunning);
-                        }
-                    }, 1000);
-                } catch (e) {
-                    btn.classList.remove('btn-loading');
-                    btn.disabled = false;
-                    updatePlaybackButton(false);
-                    throw e;
-                }
-            }
-        }
-
-        function getMetronomeParams() {
-            const bpm = parseInt(document.getElementById('metroBpm').value || '120', 10);
-            const vol = parseInt(document.getElementById('metroVol').value || '25', 10) / 100.0;
-            return { bpm, vol };
-        }
-
-        let metroUpdateTimer = null;
-        async function scheduleMetronomeUpdate() {
-            if (!metronomeRunning) return;
-            if (metroUpdateTimer) clearTimeout(metroUpdateTimer);
-            metroUpdateTimer = setTimeout(async () => {
-                try {
-                    const { bpm, vol } = getMetronomeParams();
-                    await apiFetch('/metronome/start', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ bpm, vol })
-                    });
-                } catch (e) {
-                    // ignore; status poll will reflect reality
-                } finally {
-                    setTimeout(refreshAudioStatuses, 200);
-                }
-            }, 200);
-        }
-
-        async function toggleMetronome() {
-            const btn = document.getElementById('metroToggleBtn');
-            if (!btn) return;
-            setBusy(btn, true, metronomeRunning ? 'Stopping...' : 'Starting...');
-            try {
-                if (metronomeRunning) {
-                    await apiFetch('/metronome/stop', { method: 'POST' });
-                } else {
-                    const { bpm, vol } = getMetronomeParams();
-                    await apiFetch('/metronome/start', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ bpm, vol })
-                    });
-                }
-            } finally {
-                setBusy(btn, false);
-                setTimeout(refreshAudioStatuses, 400);
-            }
-        }
-
+        // Recording
         async function toggleRecording() {
             const btn = document.getElementById("recordToggleBtn");
             const nameInput = document.getElementById("sessionNameInput");
             const name = nameInput.value.trim();
             const isStarting = btn.textContent.trim().toLowerCase().includes("start");
             
-            // Require session name when starting recording
             if (isStarting && !name) {
                 alert('Please enter a session name before recording.');
                 nameInput.focus();
+                nameInput.style.border = '2px solid #f0ad4e';
+                setTimeout(() => nameInput.style.border = '', 2000);
                 return;
             }
             
@@ -456,237 +262,138 @@
                 });
 
                 if (!res.ok) {
-                    const msg = await res.text();
-                    alert(msg || "Failed to toggle recording");
+                    alert(await res.text() || "Failed to toggle recording");
                 } else {
                     if (isStarting) {
-                        try { await apiFetch('/wav/play-queued', { method: 'POST' }); } catch (e) { console.warn('play-queued failed', e); }
+                        try { await apiFetch('/wav/play-queued', { method: 'POST' }); } catch (e) {}
                     } else {
-                        try { await apiFetch('/wav/stop', { method: 'POST' }); } catch (e) { console.warn('wav stop failed', e); }
+                        try { await apiFetch('/wav/stop', { method: 'POST' }); } catch (e) {}
                     }
-
                     updateRecordingButton(isStarting ? "ON" : "OFF");
-                    setTimeout(refreshStatuses, 1000);
                 }
             } catch (err) {
-                console.error(err);
-                alert("Request error.");
-            }
-        }
-
-        // Recording from Backing Track tab
-        async function startRecordingFromTracks() {
-            const nameInput = document.getElementById('tracksSessionName');
-            const name = nameInput.value.trim();
-            const statusDiv = document.getElementById('tracksRecordStatus');
-            
-            if (!name) {
-                // Switch to Control tab and focus the session name field there
-                showTab('control');
-                const mainNameInput = document.getElementById('sessionNameInput');
-                if (mainNameInput) {
-                    mainNameInput.focus();
-                    mainNameInput.style.border = '2px solid #f0ad4e';
-                    setTimeout(() => {
-                        mainNameInput.style.border = '';
-                    }, 2000);
-                }
-                alert('Please enter a session name before recording.');
-                return;
-            }
-            
-            // Also require a backing track to be loaded
-            const q = await apiFetch('/wav/queue').then(r => r.json()).catch(() => ({}));
-            if (!q.file) {
-                alert('Please load a backing track before recording.');
-                return;
-            }
-            
-            try {
-                const res = await apiFetch("/toggle-recording", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ session_name: name, action: "start" })
-                });
-                
-                if (!res.ok) {
-                    const msg = await res.text();
-                    alert(msg || "Failed to start recording");
-                    return;
-                }
-                
-                // Start playing the backing track
-                try { 
-                    await apiFetch('/wav/play-queued', { method: 'POST' }); 
-                } catch (e) { 
-                    console.warn('play-queued failed', e); 
-                }
-                
-                // Update UI
-                statusDiv.textContent = '✅ Recording started: ' + name;
-                statusDiv.style.display = 'block';
-                statusDiv.style.color = '#5cb85c';
-                
-                // Update the Control tab button too
-                const mainBtn = document.getElementById("recordToggleBtn");
-                if (mainBtn) {
-                    mainBtn.textContent = "Stop Recording";
-                    mainBtn.className = "btn btn-danger";
-                }
-                
-                setTimeout(refreshStatuses, 1000);
-            } catch (err) {
-                console.error(err);
                 alert("Request error.");
             }
         }
 
         function updateRecordingButton(state) {
-            // Update Control tab button
+            recordingState = state;
             const btn = document.getElementById("recordToggleBtn");
-            if (btn) {
-                if (state === "ON") {
-                    btn.textContent = "Stop Recording";
-                    btn.className = "btn btn-danger";
-                } else {
-                    btn.textContent = "Start Recording";
-                    btn.className = "btn btn-success";
-                }
+            const status = document.getElementById("recStatus");
+            if (state === "ON") {
+                btn.textContent = "Stop Recording";
+                btn.className = "btn btn-danger";
+                status.textContent = "Recording: ON";
+                status.style.background = "#d9534f";
+            } else {
+                btn.textContent = "Start Recording";
+                btn.className = "btn btn-success";
+                status.textContent = "Recording: OFF";
+                status.style.background = "#777";
             }
+        }
+
+        // Metronome
+        function getMetronomeParams() {
+            return {
+                bpm: parseInt(document.getElementById('metroBpm').value || '120', 10),
+                vol: parseInt(document.getElementById('metroVol').value || '25', 10) / 100.0
+            };
+        }
+
+        let metroUpdateTimer = null;
+        async function scheduleMetronomeUpdate() {
+            if (!metronomeRunning) return;
+            if (metroUpdateTimer) clearTimeout(metroUpdateTimer);
+            metroUpdateTimer = setTimeout(async () => {
+                const { bpm, vol } = getMetronomeParams();
+                try {
+                    await apiFetch('/metronome/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bpm, vol })
+                    });
+                } catch (e) {}
+            }, 200);
+        }
+
+        async function toggleMetronome() {
+            const btn = document.getElementById('metroToggleBtn');
+            const isStarting = !metronomeRunning;
+            setBusy(btn, true, isStarting ? 'Starting...' : 'Stopping...');
+            try {
+                if (isStarting) {
+                    const { bpm, vol } = getMetronomeParams();
+                    await apiFetch('/metronome/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bpm, vol })
+                    });
+                } else {
+                    await apiFetch('/metronome/stop', { method: 'POST' });
+                }
+                metronomeRunning = isStarting;
+                btn.textContent = isStarting ? 'Stop' : 'Start';
+                btn.className = isStarting ? 'btn btn-danger' : 'btn btn-success';
+            } finally {
+                setBusy(btn, false);
+            }
+        }
+
+        // Playback
+        async function togglePlayback() {
+            const btn = document.getElementById('playToggleBtn');
+            if (!btn) return;
             
-            // Update Backing Track tab button
-            const tracksBtn = document.getElementById("tracksRecordBtn");
-            const tracksStatus = document.getElementById("tracksRecordStatus");
-            if (tracksBtn) {
-                if (state === "ON") {
-                    tracksBtn.textContent = "Stop Recording";
-                    tracksBtn.className = "btn btn-danger";
-                    tracksBtn.onclick = () => stopRecordingFromTracks();
-                } else {
-                    tracksBtn.textContent = "Start Recording";
-                    tracksBtn.className = "btn btn-success";
-                    tracksBtn.onclick = () => startRecordingFromTracks();
+            if (playbackRunning) {
+                setBusy(btn, true, 'Stopping...');
+                try {
+                    await apiFetch('/wav/stop', { method: 'POST' });
+                } finally {
+                    setBusy(btn, false);
                 }
-            }
-            if (tracksStatus) {
-                if (state === "ON") {
-                    tracksStatus.textContent = "🔴 Recording in progress...";
-                    tracksStatus.style.display = "block";
-                    tracksStatus.style.color = "#d9534f";
-                } else {
-                    tracksStatus.style.display = "none";
+            } else {
+                btn.classList.add('btn-loading');
+                btn.textContent = 'Loading...';
+                btn.disabled = true;
+                try {
+                    await apiFetch('/wav/play-queued', { method: 'POST' });
+                    let attempts = 0;
+                    const check = setInterval(async () => {
+                        await refreshPlaybackStatus();
+                        if (playbackRunning || ++attempts > 30) {
+                            clearInterval(check);
+                            btn.classList.remove('btn-loading');
+                            btn.disabled = false;
+                            updatePlaybackButton();
+                        }
+                    }, 1000);
+                } catch (e) {
+                    btn.classList.remove('btn-loading');
+                    btn.disabled = false;
+                    updatePlaybackButton();
                 }
             }
         }
-        
-        // Stop recording from Backing Track tab
-        async function stopRecordingFromTracks() {
+
+        async function refreshPlaybackStatus() {
             try {
-                const res = await apiFetch("/toggle-recording", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "stop" })
-                });
-                
-                if (!res.ok) {
-                    const msg = await res.text();
-                    alert(msg || "Failed to stop recording");
-                    return;
-                }
-                
-                // Stop the backing track
-                try { 
-                    await apiFetch('/wav/stop', { method: 'POST' }); 
-                } catch (e) { 
-                    console.warn('wav stop failed', e); 
-                }
-                
-                updateRecordingButton("OFF");
-                setTimeout(refreshStatuses, 1000);
-            } catch (err) {
-                console.error(err);
-                alert("Request error.");
-            }
-        }
-
-        async function refreshStatuses() {
-            try {
-                const [statusResp, namesResp] = await Promise.all([
-                    fetch('/get-status'),
-                    fetch('/get-names')
-                ]);
-
-                const statusData = await statusResp.json();
-                const names = await namesResp.json();
-
-                updateRecordingButton(statusData.recording_state || "OFF");
-
-                const container = document.getElementById("savedSessions");
-                container.innerHTML = "";
-                names.forEach(n => {
-                    const row = document.createElement("div");
-                    row.className = "session-row";
-                    row.innerHTML = `
-                        <span class="session-name" onclick="prefillSessionName('${n.name}')">${n.name}</span>
-                        <button class="btn btn-warning btn-sm" onclick="editSession('${n.name}')">Edit</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteSession('${n.name}')">Delete</button>
-                    `;
-                    container.appendChild(row);
-                });
-
-            } catch (err) {
-                console.error("Status refresh error:", err);
-            }
-        }
-
-        function prefillSessionName(name) {
-            document.getElementById("sessionNameInput").value = name;
-        }
-
-        async function editSession(oldName) {
-            const newName = prompt("Edit session name:", oldName);
-            if (!newName || newName.trim() === "") return;
-            await fetch("/edit-name", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ old_name: oldName, new_name: newName })
-            });
-            refreshStatuses();
-        }
-
-        async function deleteSession(name) {
-            if (!confirm("Delete this session?")) return;
-            await fetch("/delete-name", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name })
-            });
-            refreshStatuses();
-        }
-
-        document.addEventListener("DOMContentLoaded", () => {
-            refreshStatuses();
-            refreshAudioStatuses();
-            refreshQueuedWav();
-            setInterval(refreshStatuses, 3000);
-            setInterval(refreshAudioStatuses, 2000);
-            setInterval(refreshQueuedWav, 5000);
-        });
-
-        async function refreshQueuedWav() {
-            try {
-                const res = await apiFetch('/wav/queue');
+                const res = await apiFetch('/api/playback/status');
                 const data = await res.json();
-                const f = (data && data.file) ? data.file : '';
-                document.getElementById('queuedWavDisplay').textContent = f || '(none)';
-            } catch (e) {
-                console.warn('refreshQueuedWav failed', e);
-            }
+                playbackRunning = data.running || false;
+            } catch (e) {}
         }
 
-        async function clearQueuedWav() {
-            await apiFetch('/wav/queue', { method: 'DELETE' });
-            await refreshQueuedWav();
+        function updatePlaybackButton() {
+            const btn = document.getElementById('playToggleBtn');
+            if (!btn) return;
+            if (playbackRunning) {
+                btn.textContent = 'Stop Track';
+                btn.className = 'btn btn-danger';
+            } else {
+                btn.textContent = 'Play Track';
+                btn.className = 'btn btn-success';
+            }
         }
 
         async function restartTrack() {
@@ -694,243 +401,227 @@
                 const res = await apiFetch('/wav/restart', { method: 'POST' });
                 const data = await res.json();
                 if (!res.ok || !data.ok) {
-                    // Error could be in data.error or data.upstream.error
-                    const errorMsg = data.error || (data.upstream && data.upstream.error) || 'Unknown error';
-                    alert('Restart failed: ' + errorMsg);
-                    return;
+                    alert('Restart failed: ' + (data.error || (data.upstream && data.upstream.error) || 'Unknown error'));
                 }
-                console.log('Track restarted:', data.restarted);
             } catch (e) {
                 alert('Restart error: ' + e);
             }
         }
 
-        // ----- S3 Browser (Backing Tracks) -----
-        let wavCurrentPath = "recordings/";
-
-        function wavSetPath(p) {
-            let raw = (p || "").replace(/^\/+/, "");
-            raw = raw.replace(/\/+$/, "");
-            const parts = raw.split('/').filter(Boolean);
-            const norm = [];
-            for (const seg of parts) {
-                if (norm.length && norm[norm.length-1] === seg) continue;
-                norm.push(seg);
-            }
-            wavCurrentPath = norm.join('/') + (norm.length ? '/' : '');
-            document.getElementById('wavPath').textContent = "/" + wavCurrentPath;
+        async function clearQueuedWav() {
+            await apiFetch('/wav/queue', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({file:''}) });
+            refreshQueuedWav();
         }
 
-        function getFileIcon(filename) {
-            const ext = (filename.split('.').pop() || '').toLowerCase();
-            const icons = {
-                'wav': '🎵',
-                'mp3': '🎵',
-                'rpp': '🎚️',
-                'lof': '📋'
-            };
-            return icons[ext] || '📄';
-        }
-
-        function isAudioFile(filename) {
-            const ext = (filename.split('.').pop() || '').toLowerCase();
-            return ['wav', 'mp3'].includes(ext);
-        }
-
-        async function tmpTrackUpload(){
-            const input = document.getElementById('tmpTrackUploadInput');
-            if (!input || !input.files || !input.files.length) { alert('Pick a file first.'); return; }
-            const file = input.files[0];
+        async function refreshQueuedWav() {
             try {
-                const qs = new URLSearchParams({
-                    area: 'tracks',
-                    prefix: 'tmp/',
-                    filename: file.name,
-                    contentType: file.type || 'application/octet-stream',
-                });
-                const pres = await apiFetch('/api/library/presign-put?' + qs.toString());
-                const pdata = await pres.json();
-                if (!pres.ok || !pdata.ok) { alert('Presign failed: ' + (pdata.error || pres.status)); return; }
-
-                const put = await fetch(pdata.url, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
-                if (!put.ok) {
-                    const t = await put.text().catch(()=>'');
-                    alert('Upload failed: ' + put.status + ' ' + t);
-                    return;
-                }
-
-                input.value = '';
-                wavSetPath('tracks/tmp/');
-                await wavRefresh();
-                alert('Temp track uploaded (auto-deletes ~24h).');
-            } catch (e) {
-                alert('Temp upload error: ' + e);
-            }
-        }
-
-        async function downloadFile(key, filename) {
-            try {
-                const res = await apiFetch('/api/library/presign?key=' + encodeURIComponent(key));
+                const res = await apiFetch('/wav/queue');
                 const data = await res.json();
-                if (!res.ok || !data.ok) {
-                    alert('Download failed: ' + (data.error || res.status));
-                    return;
-                }
-                // Create temporary link to trigger download
-                const a = document.createElement('a');
-                a.href = data.url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            } catch (e) {
-                alert('Download error: ' + e);
-            }
+                const f = (data && data.file) ? data.file : '';
+                document.getElementById('queuedWavDisplay').textContent = f || '(none)';
+            } catch (e) {}
+        }
+
+        // File Browser
+        function isAudioFile(name) {
+            return /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(name);
+        }
+
+        function getFileIcon(name) {
+            if (/\.(mp3|ogg|flac|m4a|aac)$/i.test(name)) return '🎵';
+            if (/\.wav$/i.test(name)) return '🔊';
+            return '📄';
         }
 
         async function wavRefresh() {
-            const err = document.getElementById('wavErr');
-            err.style.display = 'none';
-            err.textContent = '';
-
-            const area = wavCurrentPath.startsWith('tracks/') ? 'tracks' : 'recordings';
-            const prefix = wavCurrentPath.replace(/^(tracks|recordings)\//, '');
-
-            const u = '/api/library/list?area=' + encodeURIComponent(area) + '&prefix=' + encodeURIComponent(prefix);
-            let data;
             try {
-                const res = await apiFetch(u);
-                data = await res.json();
-                if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
-            } catch(e) {
-                err.textContent = 'Browse error: ' + e;
-                err.style.display = 'block';
-                return;
-            }
-
-            const dirsDiv = document.getElementById('wavDirs');
-            dirsDiv.innerHTML = '';
-            (data.dirs || []).forEach(d => {
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-sm';
-                btn.style.display = 'block';
-                btn.style.width = '100%';
-                btn.style.textAlign = 'left';
-                btn.textContent = '📁 ' + d;
-                btn.onclick = () => {
-                    wavCurrentPath = wavCurrentPath + d + '/';
-                    document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
-                    wavRefresh();
-                };
-                dirsDiv.appendChild(btn);
-            });
-
-            const filesDiv = document.getElementById('wavFiles');
-            filesDiv.innerHTML = '';
-            (data.files || []).forEach(f => {
-                const row = document.createElement('div');
-                row.className = 'file-row';
-
-                const name = document.createElement('div');
-                name.className = 'file-name';
+                const res = await apiFetch('/wav/list?prefix=' + encodeURIComponent(wavCurrentPath));
+                const data = await res.json();
+                const filesDiv = document.getElementById('wavFiles');
+                filesDiv.innerHTML = '';
                 
-                // Format file size
-                let sizeStr = '';
-                let sizeWarning = '';
-                if (f.size) {
-                    const mb = f.size / (1024 * 1024);
-                    if (mb < 1) {
-                        sizeStr = (f.size / 1024).toFixed(1) + ' KB';
-                    } else {
-                        sizeStr = mb.toFixed(1) + ' MB';
-                    }
-                    // Warn if file > 20MB (approx 10+ min track)
-                    if (mb > 20) {
-                        sizeWarning = ' ⚠️ Large file!';
-                    }
-                }
-                
-                name.innerHTML = '<span class="file-icon">' + getFileIcon(f.name) + '</span>' + f.name + 
-                    (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + sizeWarning + ')</small>' : '');
-
-                const actions = document.createElement('div');
-                actions.className = 'file-actions';
-
-                // Download button for all files
-                const dlBtn = document.createElement('button');
-                dlBtn.className = 'btn btn-sm btn-info';
-                dlBtn.textContent = 'Download';
-                dlBtn.onclick = () => downloadFile(f.key, f.name);
-                actions.appendChild(dlBtn);
-
-                // Load button only for audio files
-                if (isAudioFile(f.name)) {
-                    const loadBtn = document.createElement('button');
-                    loadBtn.className = 'btn btn-sm btn-success';
-                    loadBtn.textContent = 'Load';
-                    loadBtn.onclick = async () => {
-                        const full = wavCurrentPath + f.name;
-                        // Warn about large files
-                        if (f.size && f.size > 20 * 1024 * 1024) {
-                            const mb = (f.size / (1024 * 1024)).toFixed(1);
-                            if (!confirm('This file is ' + mb + ' MB. Large files may take 10-30 seconds to load. Continue?')) {
-                                return;
-                            }
-                        }
-                        await apiFetch('/wav/queue', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ file: full })
-                        });
-                        await refreshQueuedWav();
+                // Folders
+                (data.dirs || []).forEach(d => {
+                    const btn = document.createElement('div');
+                    btn.className = 'file-row';
+                    btn.innerHTML = '<span>📁 ' + d + '/</span>';
+                    btn.style.cursor = 'pointer';
+                    btn.onclick = () => {
+                        wavCurrentPath = wavCurrentPath + d + '/';
+                        document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
+                        wavRefresh();
                     };
-                    actions.appendChild(loadBtn);
-                }
-
-                row.appendChild(name);
-                row.appendChild(actions);
-                filesDiv.appendChild(row);
-            });
-        }
-
-        async function hardResetBotJamulus() {
-            if (!confirm('Hard reset the bot? This will kill extra Jamulus instances and reconnect.')) return;
-            try {
-                const res = await apiFetch('/bot/hardreset-jamulus', { method: 'POST' });
-                const txt = await res.text();
-                if (!res.ok) { alert('Hard reset failed: ' + txt); return; }
-                alert('Hard reset requested.');
+                    filesDiv.appendChild(btn);
+                });
+                
+                // Files
+                (data.files || []).forEach(f => {
+                    const row = document.createElement('div');
+                    row.className = 'file-row';
+                    
+                    let sizeStr = '';
+                    if (f.size) {
+                        const mb = f.size / (1024 * 1024);
+                        sizeStr = mb < 1 ? (f.size / 1024).toFixed(1) + ' KB' : mb.toFixed(1) + ' MB';
+                    }
+                    
+                    row.innerHTML = '<span>' + getFileIcon(f.name) + ' ' + f.name + (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + ')</small>' : '') + '</span>';
+                    
+                    const actions = document.createElement('div');
+                    actions.className = 'file-actions';
+                    
+                    if (isAudioFile(f.name)) {
+                        const loadBtn = document.createElement('button');
+                        loadBtn.className = 'btn btn-sm btn-success';
+                        loadBtn.textContent = 'Load';
+                        loadBtn.onclick = async () => {
+                            if (f.size && f.size > 20 * 1024 * 1024) {
+                                if (!confirm('Large file (' + (f.size / (1024 * 1024)).toFixed(1) + ' MB). May take 10-30s to load. Continue?')) return;
+                            }
+                            await apiFetch('/wav/queue', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({file: wavCurrentPath + f.name})
+                            });
+                            refreshQueuedWav();
+                        };
+                        actions.appendChild(loadBtn);
+                    }
+                    
+                    row.appendChild(actions);
+                    filesDiv.appendChild(row);
+                });
             } catch (e) {
-                alert('Hard reset error.');
-            }
-        }
-
-        async function restartBotJamulus() {
-            if (!confirm('Restart the bot Jamulus client? (takes ~5-10 seconds)')) return;
-            try {
-                const res = await apiFetch('/bot/restart-jamulus', { method: 'POST' });
-                const txt = await res.text();
-                if (!res.ok) { alert('Restart failed: ' + txt); return; }
-                alert('Bot restart requested.');
-            } catch (e) {
-                alert('Restart error.');
+                console.error('wavRefresh error', e);
             }
         }
 
         function wavUp() {
-            if (!wavCurrentPath) return;
-            let p = wavCurrentPath.replace(/\/+$/, '');
-            const parts = p.split('/');
-            parts.pop();
-            const up = parts.join('/');
-            wavCurrentPath = up ? (up + '/') : 'recordings/';
+            const parts = wavCurrentPath.replace(/\/$/, '').split('/').filter(Boolean);
+            if (parts.length > 0) {
+                parts.pop();
+                wavCurrentPath = parts.length === 0 ? 'recordings/' : parts.join('/') + '/';
+                if (!wavCurrentPath.startsWith('recordings/')) wavCurrentPath = 'recordings/';
+            }
             document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
             wavRefresh();
         }
 
+        async function tmpTrackUpload() {
+            const input = document.getElementById('tmpTrackUploadInput');
+            if (!input.files || !input.files[0]) {
+                alert('Please select a file first');
+                return;
+            }
+            const file = input.files[0];
+            const form = new FormData();
+            form.append('file', file);
+            try {
+                const res = await fetch('/wav/tmp-upload', { method: 'POST', body: form });
+                const data = await res.json();
+                if (data.ok) {
+                    alert('Uploaded: ' + data.file);
+                    wavRefresh();
+                } else {
+                    alert('Upload failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Upload error: ' + e);
+            }
+        }
+
+        // Other actions
+        async function restartBotJamulus() {
+            if (!confirm('Restart the bot?')) return;
+            try {
+                await apiFetch('/bot/restart-jamulus', { method: 'POST' });
+                alert('Restart requested.');
+            } catch (e) {
+                alert('Error.');
+            }
+        }
+
+        async function toggleLock() {
+            const pw = prompt('Enter password:');
+            if (!pw) return;
+            await apiFetch('/toggle-lock', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({password: pw})
+            });
+            refreshStatuses();
+        }
+
+        // Status & Sessions
+        async function refreshStatuses() {
+            try {
+                const res = await apiFetch('/get-status');
+                const data = await res.json();
+                
+                // Recording
+                if (data.recording_state && data.recording_state !== recordingState) {
+                    updateRecordingButton(data.recording_state);
+                }
+                
+                // Jamulus
+                const jamStatus = document.getElementById('jamStatus');
+                if (data.jamulus_running) {
+                    jamStatus.textContent = 'Jamulus: Running';
+                    jamStatus.style.background = '#5cb85c';
+                } else {
+                    jamStatus.textContent = 'Jamulus: Stopped';
+                    jamStatus.style.background = '#d9534f';
+                }
+                
+                // Lock
+                const lockStatus = document.getElementById('lockStatus');
+                if (data.locked) {
+                    lockStatus.textContent = 'Locked';
+                    lockStatus.style.background = '#f0ad4e';
+                } else {
+                    lockStatus.textContent = 'Unlocked';
+                    lockStatus.style.background = '#5bc0de';
+                }
+            } catch (e) {}
+            
+            // Saved sessions
+            try {
+                const res = await apiFetch('/get-names');
+                const sessions = await res.json();
+                const div = document.getElementById('savedSessions');
+                div.innerHTML = '';
+                (sessions || []).forEach(s => {
+                    const row = document.createElement('div');
+                    row.className = 'session-row';
+                    row.innerHTML = '<span class="session-name" onclick="document.getElementById(\'sessionNameInput\').value=\'' + s + '\'">' + s + '</span>' +
+                        '<div><button class="btn btn-sm btn-info" onclick="document.getElementById(\'sessionNameInput\').value=\'' + s + '\'">Load</button>' +
+                        '<button class="btn btn-sm btn-danger" onclick="deleteSession(\'' + s + '\')">Delete</button></div>';
+                    div.appendChild(row);
+                });
+            } catch (e) {}
+            
+            refreshPlaybackStatus();
+            updatePlaybackButton();
+        }
+
+        async function deleteSession(name) {
+            if (!confirm('Delete "' + name + '"?')) return;
+            try {
+                await apiFetch('/delete-session', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({name: name})
+                });
+                refreshStatuses();
+            } catch (e) {}
+        }
+
+        // Init
         window.onload = function() {
-            refreshQueuedWav();
             wavRefresh();
+            refreshQueuedWav();
+            refreshStatuses();
+            setInterval(refreshStatuses, 3000);
         };
     </script>
 </body>
