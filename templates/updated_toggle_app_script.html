@@ -112,7 +112,20 @@
         
         .upload-section { display: flex; align-items: center; gap: 8px; }
         
-        #wavFiles { max-height: 300px; overflow-y: auto; }
+        #wavFiles { 
+            max-height: 300px; 
+            overflow-y: auto; 
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            padding: 8px;
+            background: rgba(0,0,0,0.1);
+            min-height: 50px;
+        }
+        #wavFiles:empty::before {
+            content: "Loading files...";
+            color: rgba(255,255,255,0.5);
+            font-style: italic;
+        }
         
         /* Flashing red for loading state */
         @keyframes flash-red {
@@ -417,7 +430,7 @@
 
         async function wavRefresh() {
             try {
-                const res = await apiFetch('/wav/list?prefix=' + encodeURIComponent(wavCurrentPath));
+                const res = await apiFetch('/wav/browse?prefix=' + encodeURIComponent(wavCurrentPath));
                 const data = await res.json();
                 const filesDiv = document.getElementById('wavFiles');
                 filesDiv.innerHTML = '';
