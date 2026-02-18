@@ -508,6 +508,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Location','/')
                 self.end_headers()
                 return
+            if u.path == '/api/restart':
+                with state['lock']:
+                    current = state['now']
+                if not current:
+                    self._send(200, json.dumps({'ok': False, 'error': 'No track currently loaded'}), ctype='application/json; charset=utf-8')
+                    return
+                stop_playback()
+                start_playback(current)
+                self._send(200, json.dumps({'ok': True, 'restarted': current}), ctype='application/json; charset=utf-8')
+                return
 
             # index
             with state['lock']:

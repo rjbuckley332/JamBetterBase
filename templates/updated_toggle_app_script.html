@@ -198,13 +198,6 @@
         <button class="btn btn-sm btn-info" onclick="restartTrack()">Restart Track</button>
         <button class="btn btn-sm btn-warning" onclick="clearQueuedWav()">Clear Track</button>
       </div>
-      <div style="margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="checkbox" id="autoRestartCheckbox" onchange="toggleAutoRestart()">
-          <span><b>Auto-restart on silence</b> - Restarts backing track after 6 seconds of silence (for re-takes)</span>
-        </label>
-        <div id="autoRestartStatus" style="margin-top:4px; font-size:12px; opacity:0.8; display:none;"></div>
-      </div>
 
       <div id="wavBrowser" style="margin-top:10px; padding:10px; border:1px solid rgba(255,255,255,0.35); border-radius:8px; background: transparent; display:flex; flex-direction:column; max-height:70vh;">
         <div class="nav-row">
@@ -497,11 +490,9 @@
             refreshStatuses();
             refreshAudioStatuses();
             refreshQueuedWav();
-            refreshAutoRestartStatus();
             setInterval(refreshStatuses, 3000);
             setInterval(refreshAudioStatuses, 2000);
             setInterval(refreshQueuedWav, 5000);
-            setInterval(refreshAutoRestartStatus, 10000);
         });
 
         async function refreshQueuedWav() {
@@ -594,59 +585,6 @@
                 alert('Temp track uploaded (auto-deletes ~24h).');
             } catch (e) {
                 alert('Temp upload error: ' + e);
-            }
-        }
-
-        // Auto-restart on silence feature
-        let autoRestartEnabled = false;
-
-        async function toggleAutoRestart() {
-            const cb = document.getElementById('autoRestartCheckbox');
-            const statusDiv = document.getElementById('autoRestartStatus');
-            autoRestartEnabled = cb.checked;
-
-            try {
-                const res = await apiFetch('/wav/auto-restart', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: autoRestartEnabled, silence_seconds: 6 })
-                });
-                const data = await res.json();
-                if (!res.ok || !data.ok) {
-                    statusDiv.textContent = 'Error: ' + (data.error || 'Failed to set auto-restart');
-                    statusDiv.style.display = 'block';
-                    statusDiv.style.color = '#b00020';
-                    return;
-                }
-                statusDiv.textContent = autoRestartEnabled
-                    ? '✓ Auto-restart enabled - Track will restart after 6 seconds of silence'
-                    : 'Auto-restart disabled';
-                statusDiv.style.display = 'block';
-                statusDiv.style.color = autoRestartEnabled ? '#5cb85c' : '#aaa';
-            } catch (e) {
-                statusDiv.textContent = 'Error: ' + e;
-                statusDiv.style.display = 'block';
-                statusDiv.style.color = '#b00020';
-            }
-        }
-
-        async function refreshAutoRestartStatus() {
-            try {
-                const res = await apiFetch('/wav/auto-restart');
-                const data = await res.json();
-                if (res.ok && data.ok) {
-                    const cb = document.getElementById('autoRestartCheckbox');
-                    autoRestartEnabled = data.enabled || false;
-                    cb.checked = autoRestartEnabled;
-                    const statusDiv = document.getElementById('autoRestartStatus');
-                    if (autoRestartEnabled) {
-                        statusDiv.textContent = '✓ Auto-restart enabled - Track will restart after ' + (data.silence_seconds || 6) + ' seconds of silence';
-                        statusDiv.style.display = 'block';
-                        statusDiv.style.color = '#5cb85c';
-                    }
-                }
-            } catch (e) {
-                console.warn('refreshAutoRestartStatus failed', e);
             }
         }
 
@@ -788,7 +726,6 @@
         window.onload = function() {
             refreshQueuedWav();
             wavRefresh();
-            refreshAutoRestartStatus();
         };
     </script>
 </body>
