@@ -607,7 +607,7 @@
         async function deleteSession(name) {
             if (!confirm('Delete "' + name + '"?')) return;
             try {
-                await apiFetch('/delete-session', {
+                await apiFetch('/delete-name', {
                     method: 'POST',
                     headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({name: name})
