@@ -404,7 +404,7 @@
         }
 
         async function clearQueuedWav() {
-            await apiFetch('/wav/queue', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({file:''}) });
+            await apiFetch('/wav/queue', { method: 'DELETE' });
             refreshQueuedWav();
         }
 
