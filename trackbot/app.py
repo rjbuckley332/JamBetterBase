@@ -102,18 +102,23 @@ def start_playback(relpath):
     src_path = tmpdir / f"src_{h}.{ext}"
     wav_path = tmpdir / f"play_{h}.wav"
 
-    # Fetch source to local file (streaming; avoids holding in memory)
-    rclone_cmd = ['rclone','cat',full] + RCLONE_FLAGS
-    with open(src_path, 'wb') as f:
-        r = subprocess.run(rclone_cmd, stdout=f, stderr=subprocess.PIPE)
-    if r.returncode != 0:
-        raise RuntimeError((r.stderr or b'').decode('utf-8', errors='replace') or 'rclone cat failed')
+    # Check if we already have the converted WAV file cached locally
+    if wav_path.exists():
+        # Use cached file - skip download and conversion
+        pass
+    else:
+        # Fetch source to local file (streaming; avoids holding in memory)
+        rclone_cmd = ['rclone','cat',full] + RCLONE_FLAGS
+        with open(src_path, 'wb') as f:
+            r = subprocess.run(rclone_cmd, stdout=f, stderr=subprocess.PIPE)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or b'').decode('utf-8', errors='replace') or 'rclone cat failed')
 
-    # Decode/normalize to 48k WAV stereo (Jamulus-friendly, easy L/R routing)
-    ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-ac','2','-ar','48000', str(wav_path)]
-    d = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-    if d.returncode != 0:
-        raise RuntimeError(d.stderr.strip() or 'ffmpeg decode failed')
+        # Decode/normalize to 48k WAV stereo (Jamulus-friendly, easy L/R routing)
+        ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-ac','2','-ar','48000', str(wav_path)]
+        d = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if d.returncode != 0:
+            raise RuntimeError(d.stderr.strip() or 'ffmpeg decode failed')
 
     # Play via PipeWire (pw-cat) and explicitly link to the injector inputs.
     # This avoids JACK timing glitches we observed with gst jackaudiosink on this VPS.
@@ -554,6 +559,25 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, body)
         except Exception as e:
             self._send(500, f"error: {html.escape(str(e))}")
+
+    def do_POST(self):
+        try:
+            u = urllib.parse.urlparse(self.path)
+            if u.path == '/api/restart':
+                # Restart current playback from beginning
+                with state['lock']:
+                    now = state['now']
+                if now:
+                    stop_playback()
+                    time.sleep(0.1)
+                    start_playback(now)
+                    self._send(200, json.dumps({'ok': True, 'restarted': now}), ctype='application/json; charset=utf-8')
+                else:
+                    self._send(400, json.dumps({'ok': False, 'error': 'Nothing playing to restart'}), ctype='application/json; charset=utf-8')
+                return
+            self._send(404, json.dumps({'ok': False, 'error': 'Not found'}), ctype='application/json; charset=utf-8')
+        except Exception as e:
+            self._send(500, json.dumps({'ok': False, 'error': str(e)}), ctype='application/json; charset=utf-8')
 
     def log_message(self, fmt, *args):
         return

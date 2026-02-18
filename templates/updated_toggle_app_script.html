@@ -551,7 +551,9 @@
                 const res = await apiFetch('/wav/restart', { method: 'POST' });
                 const data = await res.json();
                 if (!res.ok || !data.ok) {
-                    alert('Restart failed: ' + (data.error || 'Unknown error'));
+                    // Error could be in data.error or data.upstream.error
+                    const errorMsg = data.error || (data.upstream && data.upstream.error) || 'Unknown error';
+                    alert('Restart failed: ' + errorMsg);
                     return;
                 }
                 console.log('Track restarted:', data.restarted);
