@@ -590,7 +590,8 @@
                 const sessions = await res.json();
                 const div = document.getElementById('savedSessions');
                 div.innerHTML = '';
-                (sessions || []).forEach(s => {
+                (sessions || []).forEach(item => {
+                    const s = (typeof item === 'object' && item.name) ? item.name : item;
                     const row = document.createElement('div');
                     row.className = 'session-row';
                     row.innerHTML = '<span class="session-name" onclick="document.getElementById(\'sessionNameInput\').value=\'' + s + '\'">' + s + '</span>' +
