@@ -708,13 +708,13 @@ def wav_tmp_upload():
     filename = f"{uuid.uuid4().hex}_{f.filename.replace(' ', '_').replace('/', '_')}"
     filepath = os.path.join(tmp_dir, filename)
     f.save(filepath)
-    # Upload to S3 in recordings/tmp/
-    key = f"vps/{LIBRARY_VPS_ID}/recordings/tmp/{filename}"
+    # Upload to S3 in recordings/temp/
+    key = f"vps/{LIBRARY_VPS_ID}/recordings/temp/{filename}"
     try:
         s3 = boto3.client("s3", region_name=LIBRARY_AWS_REGION)
         s3.upload_file(filepath, LIBRARY_S3_BUCKET, key)
         os.remove(filepath)
-        return jsonify({"ok": True, "file": f"recordings/tmp/{filename}"})
+        return jsonify({"ok": True, "file": f"recordings/temp/{filename}"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 

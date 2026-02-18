@@ -139,6 +139,16 @@
         
         .nav-left { display: flex; gap: 5px; }
         
+        .help-tooltip {
+            cursor: help;
+            font-size: 16px;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .help-tooltip:hover {
+            opacity: 1;
+        }
+        
         @media (max-width: 600px) {
             .container { margin-top: 200px; padding: 15px; }
             .input-group { flex-direction: column; align-items: stretch; }
@@ -159,13 +169,12 @@
                 <label><b>Session Name:</b></label>
                 <input type="text" id="sessionNameInput" placeholder="Enter name before recording" style="flex:1;min-width:200px;">
                 <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
+                <span class="help-tooltip" title="If a backing track is selected, it will automatically play when you start recording">❓</span>
                 <button class="btn btn-warning" onclick="restartBotJamulus()">Restart Bot</button>
-                <button class="btn btn-warning" onclick="toggleLock()">Lock Session</button>
             </div>
             <div class="status-row">
                 <span id="recStatus" class="status-item" style="background:#777;">Recording: OFF</span>
-                <span id="jamStatus" class="status-item" style="background:#777;">Jamulus: Unknown</span>
-                <span id="lockStatus" class="status-item" style="background:#5bc0de;">Unlocked</span>
+                <span id="jamStatus" class="status-item" style="background:#777;">Jamulus Server: Unknown</span>
             </div>
         </div>
 
@@ -199,9 +208,16 @@
                         <button class="btn btn-sm" onclick="wavUp()">Up</button>
                         <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
                     </div>
-                    <div class="upload-section">
-                        <input type="file" id="tmpTrackUploadInput" accept="audio/*" style="max-width:150px;">
-                        <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
+                    <div class="upload-section" style="flex-direction:column;align-items:flex-end;">
+                        <div id="uploadFileName" style="font-size:12px;color:rgba(255,255,255,0.8);margin-bottom:4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <label class="btn btn-sm" style="position:relative;overflow:hidden;cursor:pointer;margin:0;">
+                                Choose File
+                                <input type="file" id="tmpTrackUploadInput" accept="audio/*" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
+                            </label>
+                            <span class="help-tooltip" title="Look in the temp folder below">❓</span>
+                            <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
+                        </div>
                     </div>
                 </div>
                 <div id="wavFiles"></div>
@@ -435,8 +451,8 @@
                 const filesDiv = document.getElementById('wavFiles');
                 filesDiv.innerHTML = '';
                 
-                // Folders
-                (data.dirs || []).forEach(d => {
+                // Folders (hide old 'tmp' folder, only show 'temp')
+                (data.dirs || []).filter(d => d !== 'tmp').forEach(d => {
                     const btn = document.createElement('div');
                     btn.className = 'file-row';
                     btn.innerHTML = '<span>📁 ' + d + '/</span>';
@@ -544,17 +560,6 @@
             }
         }
 
-        async function toggleLock() {
-            const pw = prompt('Enter password:');
-            if (!pw) return;
-            await apiFetch('/toggle-lock', {
-                method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({password: pw})
-            });
-            refreshStatuses();
-        }
-
         // Status & Sessions
         async function refreshStatuses() {
             try {
@@ -569,21 +574,26 @@
                 // Jamulus
                 const jamStatus = document.getElementById('jamStatus');
                 if (data.jamulus_running) {
-                    jamStatus.textContent = 'Jamulus: Running';
+                    jamStatus.textContent = 'Jamulus Server: Running';
                     jamStatus.style.background = '#5cb85c';
                 } else {
-                    jamStatus.textContent = 'Jamulus: Stopped';
+                    jamStatus.textContent = 'Jamulus Server: Stopped';
                     jamStatus.style.background = '#d9534f';
                 }
-                
-                // Lock
-                const lockStatus = document.getElementById('lockStatus');
-                if (data.locked) {
-                    lockStatus.textContent = 'Locked';
-                    lockStatus.style.background = '#f0ad4e';
-                } else {
-                    lockStatus.textContent = 'Unlocked';
-                    lockStatus.style.background = '#5bc0de';
+            } catch (e) {}
+            
+            // Metronome status
+            try {
+                const metroRes = await apiFetch('/metronome/status');
+                const metroData = await metroRes.json();
+                const isRunning = metroData.running || false;
+                if (isRunning !== metronomeRunning) {
+                    metronomeRunning = isRunning;
+                    const btn = document.getElementById('metroToggleBtn');
+                    if (btn) {
+                        btn.textContent = isRunning ? 'Stop' : 'Start';
+                        btn.className = isRunning ? 'btn btn-danger' : 'btn btn-success';
+                    }
                 }
             } catch (e) {}
             
