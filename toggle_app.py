@@ -549,8 +549,8 @@ def metronome_start():
     ok, resp = _require_passcode()
     if not ok: return resp
     d = request.get_json(silent=True) or {}
-    bpm = int(d.get('bpm') or 120)
-    vol = float(d.get('vol') or 0.25)
+    bpm = int(d.get('bpm') or 100)
+    vol = float(d.get('vol') or 0.8)
     url = f"{TRACKBOT_BASE_URL}/api/metronome/start?bpm={bpm}&vol={vol}"
     code, body = _http_get(url, timeout=5.0)
     try:

@@ -32,7 +32,7 @@ metronome_stop = threading.Event()
 metronome_thread = None
 metronome_bpm = None
 metronome_proc = None
-metronome_volume = 0.25
+metronome_volume = 0.8
 metronome_seq = 0  # incrementing token to cancel stale async linkers
 
 # Debounce metronome updates so sliders can feel realtime without thrashing
@@ -243,7 +243,7 @@ def _apply_metronome_now(bpm: int, volume: float):
     wav_path = f"/tmp/trackbot_metro_{bpm}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
-            _generate_click_wav(wav_path, bpm=bpm, seconds=60, sr=48000, volume=1.0)
+            _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0)
     except Exception:
         # If generation fails for any reason, fall back to a small file
         _generate_click_wav(wav_path, bpm=bpm, seconds=15, sr=48000, volume=1.0)
@@ -331,7 +331,7 @@ def _ensure_metronome_debouncer():
     metronome_debounce_thread.start()
 
 
-def start_metronome(bpm: int, volume: float = 0.25):
+def start_metronome(bpm: int, volume: float = 0.8):
     """Start/update metronome immediately.
 
     The web UI already debounces slider events, so we don't need extra
@@ -415,8 +415,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(400, json.dumps({'ok': False, 'error': 'Nothing playing to restart'}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/metronome/start':
-                bpm = int(q.get('bpm', ['120'])[0] or 120)
-                vol = float(q.get('vol', ['0.25'])[0] or 0.25)
+                bpm = int(q.get('bpm', ['100'])[0] or 100)
+                vol = float(q.get('vol', ['0.8'])[0] or 0.8)
                 start_metronome(bpm, vol)
                 self._send(200, json.dumps({'ok': True, 'bpm': bpm, 'vol': vol}), ctype='application/json; charset=utf-8')
                 return

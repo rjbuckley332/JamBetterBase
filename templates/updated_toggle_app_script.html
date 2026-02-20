@@ -225,10 +225,10 @@
         <div class="section">
             <h3>🥁 Metronome (everyone hears it)</h3>
             <div class="slider-group">
-                <label>BPM: <span id="bpmVal">120</span></label>
-                <input type="range" id="metroBpm" min="40" max="200" value="120" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
-                <label>Vol: <span id="volVal">25</span>%</label>
-                <input type="range" id="metroVol" min="0" max="100" value="25" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
+                <label>BPM: <span id="bpmVal">100</span></label>
+                <input type="range" id="metroBpm" min="40" max="200" value="100" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
+                <label>Vol: <span id="volVal">80</span>%</label>
+                <input type="range" id="metroVol" min="0" max="100" value="80" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
                 <button id="metroToggleBtn" class="btn btn-success" onclick="toggleMetronome()">Start</button>
             </div>
         </div>
@@ -350,8 +350,8 @@
         // Metronome
         function getMetronomeParams() {
             return {
-                bpm: parseInt(document.getElementById('metroBpm').value || '120', 10),
-                vol: parseInt(document.getElementById('metroVol').value || '25', 10) / 100.0
+                bpm: parseInt(document.getElementById('metroBpm').value || '100', 10),
+                vol: parseInt(document.getElementById('metroVol').value || '80', 10) / 100.0
             };
         }
 
