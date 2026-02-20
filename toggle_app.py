@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template, make_response, session, redirect
 import os, subprocess, json, glob, socket, threading, time, math, struct
 import boto3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import urllib.parse
 
@@ -18,6 +18,10 @@ def _now_local() -> datetime:
     if _LOCAL_TZ is None:
         return datetime.now()
     return datetime.now(_LOCAL_TZ)
+
+def _recording_map_key_now() -> str:
+    """UTC key that matches Jamulus folder timestamp basis."""
+    return datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
 app = Flask(__name__)
 
@@ -478,7 +482,7 @@ def toggle_recording():
             save_session_name(name)
             log_session_name(name)
             with open(RECORDING_MAP_CSV, "a") as f:
-                f.write(f"{_now_local().strftime('%Y%m%d_%H%M%S')},{name}\n")
+                f.write(f"{_recording_map_key_now()},{name}\n")
         return "OK", 200
 
     # Trigger Jamulus.
@@ -504,7 +508,7 @@ def toggle_recording():
             save_session_name(name)
             log_session_name(name)
             with open(RECORDING_MAP_CSV, "a") as f:
-                f.write(f"{_now_local().strftime('%Y%m%d_%H%M%S')},{name}\n")
+                f.write(f"{_recording_map_key_now()},{name}\n")
         Path(RECORDING_FLAG).write_text("ON")
         Path(SESSION_STATUS).write_text("ACTIVE")
     else:  # stop

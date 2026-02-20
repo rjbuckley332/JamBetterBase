@@ -39,6 +39,7 @@ import re
 import subprocess
 import time
 import csv
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -79,23 +80,75 @@ def sanitize(name: str) -> str:
     return name[:80] if name else "Unnamed"
 
 
-def lookup_session_name(map_file: str, key: str) -> str | None:
-    if not map_file or not key:
-        return None
+def _parse_map_key_ts(k: str):
     try:
-        if not os.path.exists(map_file):
-            return None
-        with open(map_file, newline='', encoding='utf-8') as f:
-            rows = list(csv.reader(f))
-        # Expect: key,name[,dest]
-        for row in reversed(rows):
-            if not row:
-                continue
-            if row[0].strip() == key and len(row) >= 2 and row[1].strip():
-                return row[1].strip()
+        return datetime.strptime((k or '').strip(), '%Y%m%d_%H%M%S')
     except Exception:
         return None
-    return None
+
+
+def lookup_session_name(map_file: str, key: str) -> tuple[str | None, str | None]:
+    """Resolve session name from map.
+
+    Returns (session_name, matched_map_key).
+    Tries, in order:
+      1) exact key match
+      2) ±4h/±5h shifted key match (handles local-vs-UTC mismatch)
+      3) nearest timestamp within 6h
+    """
+    if not map_file or not key:
+        return (None, None)
+    try:
+        if not os.path.exists(map_file):
+            return (None, None)
+        with open(map_file, newline='', encoding='utf-8') as f:
+            rows = list(csv.reader(f))
+
+        clean = []
+        for i, row in enumerate(rows):
+            if not row or len(row) < 2:
+                continue
+            k = row[0].strip()
+            n = row[1].strip()
+            if not k or not n:
+                continue
+            clean.append((i, k, n))
+
+        # 1) exact, prefer latest
+        for _, k, n in reversed(clean):
+            if k == key:
+                return (n, k)
+
+        target = _parse_map_key_ts(key)
+
+        # 2) shifted exact (timezone mismatch tolerance)
+        if target is not None:
+            for h in (4, 5, -4, -5):
+                shifted = (target + timedelta(hours=h)).strftime('%Y%m%d_%H%M%S')
+                for _, k, n in reversed(clean):
+                    if k == shifted:
+                        return (n, k)
+
+        # 3) nearest within 6h
+        if target is not None:
+            best = None
+            for idx, k, n in clean:
+                ts = _parse_map_key_ts(k)
+                if ts is None:
+                    continue
+                diff = abs((ts - target).total_seconds())
+                if diff > 6 * 3600:
+                    continue
+                cand = (diff, idx, k, n)
+                if best is None or cand[0] < best[0] or (cand[0] == best[0] and cand[1] > best[1]):
+                    best = cand
+            if best is not None:
+                _, _, k, n = best
+                return (n, k)
+
+    except Exception:
+        return (None, None)
+    return (None, None)
 
 
 def consume_name(map_file: str, key: str):
@@ -295,7 +348,7 @@ def main():
                 date_folder = jam_folder_date(d.name) or time.strftime('%Y-%m-%d')
                 yymmdd = _yymmdd_from_date_folder(date_folder)
                 key = jam_key(d.name)
-                sess = lookup_session_name(name_map_file, key) if key else None
+                sess, matched_key = lookup_session_name(name_map_file, key) if key else (None, None)
                 sess = (sess or '').strip()
                 if not sess:
                     # If no website session name, fall back to Jam-* (still deterministic)
@@ -338,33 +391,36 @@ def main():
                 else:
                     print(f"[uploader] NOTE: mix missing (or too small): {mix_src.name}")
 
-                # Upload RPP (Reaper project) file
-                rpp_files = list(d.glob('*.rpp'))
-                for rpp in rpp_files:
-                    dest = s3_base + rpp.name
+                # Upload RPP (Reaper project) file with friendly names
+                rpp_files = sorted(d.glob('*.rpp'))
+                for i, rpp in enumerate(rpp_files, start=1):
+                    suffix = f"{i:02d}" if len(rpp_files) > 1 else ""
+                    dest_name = f"{fold6}_{yymmdd}_PROJ{suffix}.rpp"
+                    dest = s3_base + dest_name
                     rc, out = s3_cp(aws_cli, aws_region, rpp, dest)
                     if rc != 0:
                         ok_all = False
                         print(f"[uploader] ERROR s3_cp rpp -> {dest}\n{out}")
                     else:
-                        print(f"[uploader] uploaded: {rpp.name}")
+                        print(f"[uploader] uploaded: {dest_name}")
 
-                # Upload LOF (Jamulus file list) file
+                # Upload LOF (Jamulus file list) with friendly name
                 if lof:
-                    dest = s3_base + lof.name
+                    dest_name = f"{fold6}_{yymmdd}_LIST.lof"
+                    dest = s3_base + dest_name
                     rc, out = s3_cp(aws_cli, aws_region, lof, dest)
                     if rc != 0:
                         ok_all = False
                         print(f"[uploader] ERROR s3_cp lof -> {dest}\n{out}")
                     else:
-                        print(f"[uploader] uploaded: {lof.name}")
+                        print(f"[uploader] uploaded: {dest_name}")
 
                 if not ok_all:
                     continue
 
                 marker.write_text(time.strftime('%Y-%m-%d %H:%M:%S'))
-                if key:
-                    consume_name(name_map_file, key)
+                if matched_key:
+                    consume_name(name_map_file, matched_key)
                 print(f"[uploader] ok: {d.name} -> {sanitize(sess)}")
 
         except Exception as e:
