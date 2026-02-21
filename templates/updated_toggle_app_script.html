@@ -235,7 +235,7 @@
         </div>
 
         <div class="header-actions">
-            <button id="supportBtn" class="btn btn-info" onclick="toggleSupportPanel()">💬 Support</button>
+            <button type="button" id="supportBtn" class="btn btn-info" onclick="toggleSupportPanel(); return false;">💬 Support</button>
         </div>
 
         <!-- SESSION & RECORDING -->
@@ -307,20 +307,20 @@
     <div id="supportWidget" class="support-widget" aria-live="polite">
         <div class="support-head">
             <b>JamBetter Support</b>
-            <button class="btn btn-sm" onclick="toggleSupportPanel(false)">Close</button>
+            <button type="button" class="btn btn-sm" onclick="toggleSupportPanel(false); return false;">Close</button>
         </div>
         <div class="support-body">
             <div style="font-size:12px;opacity:0.85;margin-bottom:8px;">Server: <code id="supportServerBadge"></code></div>
             <div class="support-actions">
-                <button class="btn btn-sm btn-info" onclick="supportQuick('status')">Check Status</button>
-                <button class="btn btn-sm btn-warning" onclick="supportQuick('restart')">Request Restart</button>
-                <button class="btn btn-sm" onclick="supportQuick('troubleshoot')">Troubleshoot</button>
-                <button class="btn btn-sm btn-danger" onclick="supportQuick('escalate')">Escalate</button>
+                <button type="button" class="btn btn-sm btn-info" onclick="supportQuick('status'); return false;">Check Status</button>
+                <button type="button" class="btn btn-sm btn-warning" onclick="supportQuick('restart'); return false;">Request Restart</button>
+                <button type="button" class="btn btn-sm" onclick="supportQuick('troubleshoot'); return false;">Troubleshoot</button>
+                <button type="button" class="btn btn-sm btn-danger" onclick="supportQuick('escalate'); return false;">Escalate</button>
             </div>
             <div id="supportLog" class="support-log"></div>
             <div class="support-input">
                 <input id="supportText" type="text" placeholder="Describe your issue..." />
-                <button class="btn btn-sm btn-success" onclick="supportSendText()">Send</button>
+                <button type="button" class="btn btn-sm btn-success" onclick="supportSendText(); return false;">Send</button>
             </div>
         </div>
     </div>
@@ -395,25 +395,6 @@
             }
         }
 
-            const room = (document.getElementById('sessionNameInput')?.value || '').trim();
-            try {
-                // Telegram deep-link handling
-                if (/^https?:\/\/t\.me\//i.test(SUPPORT_BOT_URL)) {
-                    const token = `server=${SUPPORT_SERVER_ID || ''};room=${room || ''}`;
-                    const base = SUPPORT_BOT_URL.split('?')[0];
-                    const target = `${base}?start=${encodeURIComponent(token)}`;
-                    window.open(target, '_blank', 'noopener');
-                    return;
-                }
-                const u = new URL(SUPPORT_BOT_URL, window.location.origin);
-                if (SUPPORT_SERVER_ID) u.searchParams.set('server_id', SUPPORT_SERVER_ID);
-                if (room) u.searchParams.set('room', room);
-                u.searchParams.set('source', 'webapp');
-                window.open(u.toString(), '_blank', 'noopener');
-            } catch (e) {
-                window.open(SUPPORT_BOT_URL, '_blank', 'noopener');
-            }
-        }
         let recordingState = "OFF";
         let metronomeRunning = false;
         let playbackRunning = false;
