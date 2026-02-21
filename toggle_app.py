@@ -4,6 +4,7 @@ import boto3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import urllib.parse
+import uuid as uuidlib
 
 # ---------- TIMEZONE ----------
 # We want human-facing timestamps (filenames/logs) in Eastern time.
@@ -29,6 +30,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv("WEB_SESSION_SECRET") or "b0d4488ec7feed6053da40a816518a8026518171275576c5ac64d41ea424de28"
 # ---------- Auto-restart on silence state ----------
 _auto_restart_state = {"enabled": False, "silence_seconds": 6}
+_support_sessions: dict[str, dict] = {}
 
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
@@ -617,6 +619,126 @@ def metronome_status():
     if code and 200 <= code < 300:
         return jsonify(data)
     return jsonify({"ok": False, "upstream_code": code, "upstream": data}), 502
+
+
+def _support_make_session(customer_id: str, server_id: str, room_name: str) -> dict:
+    token = uuidlib.uuid4().hex
+    _support_sessions[token] = {
+        'customer_id': (customer_id or '').strip() or 'unknown-customer',
+        'server_id': (server_id or '').strip() or LIBRARY_VPS_ID,
+        'room_name': (room_name or '').strip(),
+        'created_at': _now_local().isoformat(),
+    }
+    return {'ok': True, 'token': token, **_support_sessions[token]}
+
+
+def _support_status_payload() -> dict:
+    enabled = jamulus_recording_enabled()
+    if enabled is None:
+        enabled = _has_recent_recording_writes()
+    jamulus_running = False
+    try:
+        result = subprocess.run(['pgrep', '-x', 'jamulus'], capture_output=True)
+        jamulus_running = result.returncode == 0
+    except Exception:
+        pass
+    return {
+        'ok': True,
+        'server_id': LIBRARY_VPS_ID,
+        'jamulus_running': jamulus_running,
+        'recording_state': 'ON' if enabled else 'OFF',
+        'status_text': 'Online' if jamulus_running else 'Offline'
+    }
+
+
+def _support_reply(intent: str, text: str = '') -> dict:
+    intent = (intent or '').strip().lower()
+    text_l = (text or '').strip().lower()
+    if not intent:
+        if 'restart' in text_l:
+            intent = 'restart'
+        elif 'status' in text_l or 'availability' in text_l or 'up' in text_l:
+            intent = 'status'
+        elif 'audio' in text_l or 'hear' in text_l or 'latency' in text_l or 'connect' in text_l:
+            intent = 'troubleshoot'
+        elif 'human' in text_l or 'escalate' in text_l or 'help me' in text_l:
+            intent = 'escalate'
+        else:
+            intent = 'help'
+
+    if intent in ('status', 'availability'):
+        st = _support_status_payload()
+        return {
+            'ok': True,
+            'intent': 'status',
+            'message': f"Server {st['server_id']} is {st['status_text']}. Recording is {st['recording_state']}.",
+            'data': st,
+            'quick_actions': ['restart', 'troubleshoot', 'escalate']
+        }
+
+    if intent == 'restart':
+        url = f"{TRACKBOT_BASE_URL}/api/jamulus/restart"
+        code, body = _http_get(url, timeout=30.0)
+        try:
+            data = json.loads(body) if body else {'ok': False}
+        except Exception:
+            data = {'ok': False, 'error': body}
+        ok = bool(code and 200 <= code < 300 and data.get('ok') is True)
+        msg = 'Restart requested successfully. Please retry in 20-30 seconds.' if ok else 'Restart failed. I can escalate this to a human now.'
+        return {'ok': ok, 'intent': 'restart', 'message': msg, 'data': {'upstream_code': code, 'upstream': data}, 'quick_actions': ['status', 'escalate']}
+
+    if intent == 'troubleshoot':
+        steps = [
+            '1) Confirm Jamulus server address/port are correct.',
+            '2) Reconnect and verify your nickname/input device.',
+            '3) If audio stutters, increase buffer/latency slightly.',
+            '4) If still failing, use Restart and rejoin after 30 seconds.'
+        ]
+        return {'ok': True, 'intent': 'troubleshoot', 'message': 'Try this quick checklist:\n' + '\n'.join(steps), 'quick_actions': ['status', 'restart', 'escalate']}
+
+    if intent == 'escalate':
+        return {'ok': True, 'intent': 'escalate', 'message': 'Escalation requested. A human operator will review this server issue shortly.', 'quick_actions': ['status']}
+
+    return {
+        'ok': True,
+        'intent': 'help',
+        'message': 'I can help with: status, availability, restart, troubleshooting, or escalation.',
+        'quick_actions': ['status', 'restart', 'troubleshoot', 'escalate']
+    }
+
+
+@app.route('/api/support/session', methods=['POST'])
+def api_support_session():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    d = request.get_json(silent=True) or {}
+    return jsonify(_support_make_session(d.get('customer_id') or '', d.get('server_id') or '', d.get('room_name') or ''))
+
+
+@app.route('/api/support/message', methods=['POST'])
+def api_support_message():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    d = request.get_json(silent=True) or {}
+    token = (d.get('token') or '').strip()
+    if token and token not in _support_sessions:
+        return jsonify({'ok': False, 'error': 'invalid session token'}), 400
+    intent = d.get('intent') or ''
+    text = d.get('text') or ''
+    out = _support_reply(intent, text)
+    out['session'] = _support_sessions.get(token)
+    return jsonify(out)
+
+
+@app.route('/api/support/status', methods=['GET'])
+def api_support_status():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    return jsonify(_support_status_payload())
+
 @app.route('/wav/browse')
 def wav_browse():
     ok, resp = _require_passcode()

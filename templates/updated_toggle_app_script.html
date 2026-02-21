@@ -20,6 +20,29 @@
             justify-content: flex-end;
             margin: 6px 0 10px 0;
         }
+
+        .support-widget {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            width: 340px;
+            max-width: calc(100vw - 24px);
+            max-height: 72vh;
+            background: rgba(20,20,20,0.95);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            z-index: 120;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            display: none;
+            flex-direction: column;
+        }
+        .support-widget.open { display: flex; }
+        .support-head { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.18); display:flex; justify-content:space-between; align-items:center; }
+        .support-body { padding: 10px 12px; overflow:auto; }
+        .support-actions { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+        .support-log { font-size: 13px; line-height: 1.35; max-height: 220px; overflow:auto; background: rgba(0,0,0,0.25); border-radius:6px; padding:8px; }
+        .support-input { display:flex; gap:6px; margin-top:8px; }
+        .support-input input { flex:1; }
         
         .container {
             position: relative;
@@ -212,7 +235,7 @@
         </div>
 
         <div class="header-actions">
-            <button id="supportBtn" class="btn btn-info" onclick="openSupportBot()">💬 Support</button>
+            <button id="supportBtn" class="btn btn-info" onclick="toggleSupportPanel()">💬 Support</button>
         </div>
 
         <!-- SESSION & RECORDING -->
@@ -280,17 +303,98 @@
 
     </div>
 
+
+    <div id="supportWidget" class="support-widget" aria-live="polite">
+        <div class="support-head">
+            <b>JamBetter Support</b>
+            <button class="btn btn-sm" onclick="toggleSupportPanel(false)">Close</button>
+        </div>
+        <div class="support-body">
+            <div style="font-size:12px;opacity:0.85;margin-bottom:8px;">Server: <code id="supportServerBadge"></code></div>
+            <div class="support-actions">
+                <button class="btn btn-sm btn-info" onclick="supportQuick('status')">Check Status</button>
+                <button class="btn btn-sm btn-warning" onclick="supportQuick('restart')">Request Restart</button>
+                <button class="btn btn-sm" onclick="supportQuick('troubleshoot')">Troubleshoot</button>
+                <button class="btn btn-sm btn-danger" onclick="supportQuick('escalate')">Escalate</button>
+            </div>
+            <div id="supportLog" class="support-log"></div>
+            <div class="support-input">
+                <input id="supportText" type="text" placeholder="Describe your issue..." />
+                <button class="btn btn-sm btn-success" onclick="supportSendText()">Send</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // State
 
         const SUPPORT_BOT_URL = {{ (support_bot_url or '')|tojson }};
         const SUPPORT_SERVER_ID = {{ (support_server_id or '')|tojson }};
+        let supportToken = null;
 
-        function openSupportBot() {
-            if (!SUPPORT_BOT_URL) {
-                alert('Support bot link is not configured yet.');
-                return;
+        function supportLog(line) {
+            const el = document.getElementById('supportLog');
+            if (!el) return;
+            const ts = new Date().toLocaleTimeString();
+            el.innerHTML += `<div><span style="opacity:.7">[${ts}]</span> ${line}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function ensureSupportSession() {
+            if (supportToken) return supportToken;
+            const room = (document.getElementById('sessionNameInput')?.value || '').trim();
+            const res = await fetch('/api/support/session', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ customer_id: 'web-customer', server_id: SUPPORT_SERVER_ID, room_name: room })
+            });
+            const data = await res.json();
+            if (data.ok) supportToken = data.token;
+            return supportToken;
+        }
+
+        async function supportQuick(intent) {
+            try {
+                await ensureSupportSession();
+                const res = await fetch('/api/support/message', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ token: supportToken, intent })
+                });
+                const data = await res.json();
+                supportLog(data.message || 'No response');
+            } catch (e) {
+                supportLog('Support error: ' + e);
             }
+        }
+
+        async function supportSendText() {
+            const input = document.getElementById('supportText');
+            const text = (input?.value || '').trim();
+            if (!text) return;
+            supportLog('You: ' + text);
+            input.value = '';
+            try {
+                await ensureSupportSession();
+                const res = await fetch('/api/support/message', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ token: supportToken, text })
+                });
+                const data = await res.json();
+                supportLog(data.message || 'No response');
+            } catch (e) {
+                supportLog('Support error: ' + e);
+            }
+        }
+
+        function toggleSupportPanel(forceOpen) {
+            const panel = document.getElementById('supportWidget');
+            const wantOpen = (typeof forceOpen === 'boolean') ? forceOpen : !panel.classList.contains('open');
+            panel.classList.toggle('open', wantOpen);
+            document.getElementById('supportServerBadge').textContent = SUPPORT_SERVER_ID || 'unknown';
+            if (wantOpen && !document.getElementById('supportLog').innerHTML) {
+                supportLog('Support is ready. Choose an action or describe your issue.');
+            }
+        }
+
             const room = (document.getElementById('sessionNameInput')?.value || '').trim();
             try {
                 // Telegram deep-link handling
