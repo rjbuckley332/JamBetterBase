@@ -250,6 +250,7 @@
                     <div class="nav-left">
                         <button class="btn btn-sm" onclick="wavUp()">Up</button>
                         <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
+                        <button class="btn btn-sm btn-info" onclick="downloadCurrentFolder()">Download Folder ZIP</button>
                     </div>
                     <div class="upload-section" style="flex-direction:column;align-items:flex-end;">
                         <div id="uploadFileName" style="font-size:12px;color:rgba(255,255,255,0.8);margin-bottom:4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</div>
@@ -494,6 +495,15 @@
             return name.replace(/^[0-9a-f]{32}_/i, '');
         }
 
+
+        function downloadCurrentFolder() {
+            const p = wavCurrentPath || 'recordings/';
+            if (p === 'recordings/' || p === 'tracks/') {
+                if (!confirm('Download the entire ' + p.replace('/', '') + ' library as one ZIP? This can be large.')) return;
+            }
+            window.location.href = '/wav/download-folder?path=' + encodeURIComponent('/' + p);
+        }
+
         async function wavRefresh() {
             try {
                 const res = await apiFetch('/wav/browse?path=' + encodeURIComponent('/' + wavCurrentPath));
@@ -548,15 +558,15 @@
                             refreshQueuedWav();
                         };
                         actions.appendChild(loadBtn);
-                        
-                        // Download button
-                        const dlBtn = document.createElement('a');
-                        dlBtn.className = 'btn btn-sm btn-info';
-                        dlBtn.textContent = 'Download';
-                        dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
-                        dlBtn.download = f.name;
-                        actions.appendChild(dlBtn);
                     }
+
+                    // Download button (all file types)
+                    const dlBtn = document.createElement('a');
+                    dlBtn.className = 'btn btn-sm btn-info';
+                    dlBtn.textContent = 'Download';
+                    dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                    dlBtn.download = f.name;
+                    actions.appendChild(dlBtn);
                     
                     row.appendChild(actions);
                     filesDiv.appendChild(row);

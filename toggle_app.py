@@ -1,5 +1,5 @@
-from flask import Flask, request, jsonify, render_template, make_response, session, redirect
-import os, subprocess, json, glob, socket, threading, time, math, struct
+from flask import Flask, request, jsonify, render_template, make_response, session, redirect, send_file
+import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile
 import boto3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -229,6 +229,34 @@ def _lib_prefix(area: str, subprefix: str = "") -> str:
     return base + sub
 
 
+def _safe_library_path_subpath(path_value: str) -> tuple[str, str] | tuple[None, None]:
+    """Return (area, subpath) for a user path like recordings/foo/bar/.
+
+    area in {recordings, tracks}; subpath is normalized relative path with trailing slash allowed.
+    """
+    raw = (path_value or '').strip().lstrip('/')
+    if not raw:
+        return None, None
+    raw = raw.replace('\\', '/')
+    if '..' in raw:
+        return None, None
+    parts = [p for p in raw.split('/') if p]
+    if not parts:
+        return None, None
+    area = parts[0].lower()
+    if area not in ('recordings', 'tracks'):
+        return None, None
+    sub = '/'.join(parts[1:])
+    if sub and not sub.endswith('/'):
+        sub += '/'
+    return area, sub
+
+
+def _zip_filename_for_subpath(subpath: str, fallback: str = 'session') -> str:
+    bits = [b for b in (subpath or '').split('/') if b]
+    base = bits[-1] if bits else fallback
+    safe = ''.join(ch if ch.isalnum() or ch in ('-','_') else '_' for ch in base)
+    return f"{safe or fallback}.zip"
 
 
 def _archived_marker_prefix(area: str) -> str:
@@ -708,6 +736,67 @@ def wav_download():
     if not res.get("ok"):
         return jsonify(res), 403
     return redirect(res["url"])
+
+
+@app.route("/wav/download-folder")
+def wav_download_folder():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+
+    area, sub = _safe_library_path_subpath(request.args.get('path') or '')
+    if not area:
+        return jsonify({"ok": False, "error": "invalid or missing folder path"}), 400
+
+    prefix = _lib_prefix(area, sub)
+    try:
+        s3 = boto3.client('s3', region_name=LIBRARY_AWS_REGION)
+        token = None
+        keys = []
+        while True:
+            kw = {'Bucket': LIBRARY_S3_BUCKET, 'Prefix': prefix}
+            if token:
+                kw['ContinuationToken'] = token
+            resp = s3.list_objects_v2(**kw)
+            for obj in resp.get('Contents') or []:
+                key = obj.get('Key') or ''
+                if not key or key.endswith('/'):
+                    continue
+                if key.startswith(prefix):
+                    keys.append(key)
+            if resp.get('IsTruncated'):
+                token = resp.get('NextContinuationToken')
+            else:
+                break
+
+        if not keys:
+            return jsonify({"ok": False, "error": "folder is empty"}), 404
+
+        tmp = tempfile.NamedTemporaryFile(prefix='jamulus_session_', suffix='.zip', delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        with zipfile.ZipFile(tmp_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            for key in keys:
+                rel = key[len(prefix):]
+                if not rel:
+                    continue
+                body = s3.get_object(Bucket=LIBRARY_S3_BUCKET, Key=key)['Body'].read()
+                zf.writestr(rel, body)
+
+        dl_name = _zip_filename_for_subpath(sub or area, fallback='session')
+        response = send_file(tmp_path, as_attachment=True, download_name=dl_name, mimetype='application/zip')
+
+        @response.call_on_close
+        def _cleanup_tmp_zip():
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+        return response
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/wav/tmp-upload", methods=["POST"])
