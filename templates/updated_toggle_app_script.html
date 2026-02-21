@@ -14,6 +14,12 @@
         }
         .appHeader { margin: -4px -4px 14px -4px; }
         .appLogo { width: 100%; max-height: 220px; object-fit: contain;border-radius: 10px; display:block; }
+
+        .header-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin: 6px 0 10px 0;
+        }
         
         .container {
             position: relative;
@@ -205,6 +211,10 @@
             <img class="appLogo" src="/static/pipedreamers_logo.jpg" alt="PipeDreamers">
         </div>
 
+        <div class="header-actions">
+            <button id="supportBtn" class="btn btn-info" onclick="openSupportBot()">💬 Support</button>
+        </div>
+
         <!-- SESSION & RECORDING -->
         <div class="section">
             <h2>🎙️ Session & Recording</h2>
@@ -272,6 +282,34 @@
 
     <script>
         // State
+
+        const SUPPORT_BOT_URL = {{ (support_bot_url or '')|tojson }};
+        const SUPPORT_SERVER_ID = {{ (support_server_id or '')|tojson }};
+
+        function openSupportBot() {
+            if (!SUPPORT_BOT_URL) {
+                alert('Support bot link is not configured yet.');
+                return;
+            }
+            const room = (document.getElementById('sessionNameInput')?.value || '').trim();
+            try {
+                // Telegram deep-link handling
+                if (/^https?:\/\/t\.me\//i.test(SUPPORT_BOT_URL)) {
+                    const token = `server=${SUPPORT_SERVER_ID || ''};room=${room || ''}`;
+                    const base = SUPPORT_BOT_URL.split('?')[0];
+                    const target = `${base}?start=${encodeURIComponent(token)}`;
+                    window.open(target, '_blank', 'noopener');
+                    return;
+                }
+                const u = new URL(SUPPORT_BOT_URL, window.location.origin);
+                if (SUPPORT_SERVER_ID) u.searchParams.set('server_id', SUPPORT_SERVER_ID);
+                if (room) u.searchParams.set('room', room);
+                u.searchParams.set('source', 'webapp');
+                window.open(u.toString(), '_blank', 'noopener');
+            } catch (e) {
+                window.open(SUPPORT_BOT_URL, '_blank', 'noopener');
+            }
+        }
         let recordingState = "OFF";
         let metronomeRunning = false;
         let playbackRunning = false;

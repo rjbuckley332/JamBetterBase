@@ -86,6 +86,7 @@ LIBRARY_AWS_REGION = os.getenv('LIBRARY_AWS_REGION', 'us-east-1')
 # ---------- TRACKBOT (Injector WAV Playback) ----------
 TRACKBOT_BASE_URL = os.getenv("TRACKBOT_BASE_URL", "http://172.16.31.3:8088").rstrip("/")
 TRACKBOT_QUEUE_FILE = os.getenv("TRACKBOT_QUEUE_FILE", "/tmp/trackbot_queue.json")
+SUPPORT_BOT_URL = os.getenv("SUPPORT_BOT_URL", "https://t.me/JamBetterBot").strip()
 
 
 def create_app():
@@ -132,7 +133,7 @@ def index():
     # Gate the page itself.
     if WEB_PASSCODE and not session.get('authed'):
         return redirect('/login')
-    resp = make_response(render_template('updated_toggle_app_script.html'))
+    resp = make_response(render_template('updated_toggle_app_script.html', support_bot_url=SUPPORT_BOT_URL, support_server_id=LIBRARY_VPS_ID))
     resp.headers['Cache-Control'] = 'no-store'
     return resp
 
