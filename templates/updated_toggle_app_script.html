@@ -268,6 +268,14 @@
                 <input type="range" id="metroBpm" min="40" max="200" value="100" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
                 <label>Vol: <span id="volVal">80</span>%</label>
                 <input type="range" id="metroVol" min="0" max="100" value="80" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
+                <label>Time: <span id="sigVal">4/4</span></label>
+                <select id="metroSig" onchange="document.getElementById('sigVal').textContent=this.value; scheduleMetronomeUpdate();">
+                    <option value="2/4">2/4</option>
+                    <option value="3/4">3/4</option>
+                    <option value="4/4" selected>4/4</option>
+                    <option value="6/8">6/8</option>
+                    <option value="12/8">12/8</option>
+                </select>
                 <button id="metroToggleBtn" class="btn btn-success" onclick="toggleMetronome()">Start</button>
             </div>
         </div>
@@ -491,7 +499,8 @@
         function getMetronomeParams() {
             return {
                 bpm: parseInt(document.getElementById('metroBpm').value || '100', 10),
-                vol: parseInt(document.getElementById('metroVol').value || '80', 10) / 100.0
+                vol: parseInt(document.getElementById('metroVol').value || '80', 10) / 100.0,
+                sig: (document.getElementById('metroSig').value || '4/4')
             };
         }
 
@@ -500,12 +509,12 @@
             if (!metronomeRunning) return;
             if (metroUpdateTimer) clearTimeout(metroUpdateTimer);
             metroUpdateTimer = setTimeout(async () => {
-                const { bpm, vol } = getMetronomeParams();
+                const { bpm, vol, sig } = getMetronomeParams();
                 try {
                     await apiFetch('/metronome/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ bpm, vol })
+                        body: JSON.stringify({ bpm, vol, sig })
                     });
                 } catch (e) {}
             }, 200);
@@ -517,11 +526,11 @@
             setBusy(btn, true, isStarting ? 'Starting...' : 'Stopping...');
             try {
                 if (isStarting) {
-                    const { bpm, vol } = getMetronomeParams();
+                    const { bpm, vol, sig } = getMetronomeParams();
                     await apiFetch('/metronome/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ bpm, vol })
+                        body: JSON.stringify({ bpm, vol, sig })
                     });
                 } else {
                     await apiFetch('/metronome/stop', { method: 'POST' });
@@ -787,6 +796,11 @@
                 const metroRes = await apiFetch('/metronome/status');
                 const metroData = await metroRes.json();
                 const isRunning = metroData.running || false;
+                const sigEl = document.getElementById('metroSig');
+                if (sigEl && metroData.sig) {
+                    sigEl.value = metroData.sig;
+                    const sv = document.getElementById('sigVal'); if (sv) sv.textContent = metroData.sig;
+                }
                 if (isRunning !== metronomeRunning) {
                     metronomeRunning = isRunning;
                     const btn = document.getElementById('metroToggleBtn');

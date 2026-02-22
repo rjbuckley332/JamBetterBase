@@ -590,14 +590,15 @@ def metronome_start():
     d = request.get_json(silent=True) or {}
     bpm = int(d.get('bpm') or 100)
     vol = float(d.get('vol') or 0.8)
-    url = f"{TRACKBOT_BASE_URL}/api/metronome/start?bpm={bpm}&vol={vol}"
+    sig = (d.get('sig') or '4/4').strip()
+    url = f"{TRACKBOT_BASE_URL}/api/metronome/start?bpm={bpm}&vol={vol}&sig={urllib.parse.quote(sig, safe='')}"
     code, body = _http_get(url, timeout=5.0)
     try:
         data = json.loads(body) if body else {"ok": False}
     except Exception:
         data = {"ok": False, "error": body}
     if code and 200 <= code < 300 and data.get('ok'):
-        return jsonify({"ok": True, "bpm": bpm, "vol": vol})
+        return jsonify({"ok": True, "bpm": bpm, "vol": vol, "sig": sig})
     return jsonify({"ok": False, "upstream_code": code, "upstream": data}), 502
 
 @app.route('/metronome/stop', methods=['POST'])
