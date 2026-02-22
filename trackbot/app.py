@@ -334,7 +334,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v7_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v9_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
@@ -541,12 +541,6 @@ class Handler(BaseHTTPRequestHandler):
                     proc = state['proc']
                     now = state['now']
                 running = bool(proc and proc.poll() is None)
-                if not running:
-                    # Fallback: if a pw-cat metronome process exists, treat as running (fixes UI realtime sliders)
-                    try:
-                        running = (subprocess.run(["pgrep","-u","nds","-f","pw-cat -p .*node.name=trackbot_metro"], capture_output=True).returncode == 0)
-                    except Exception:
-                        pass
                 self._send(200, json.dumps({'ok': True, 'running': running, 'now': now}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/jamulus/hardreset':
