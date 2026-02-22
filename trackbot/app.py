@@ -177,20 +177,59 @@ def _parse_time_signature(sig: str) -> tuple[int, int]:
 
 
 
+def _ensure_click_samples(sr: int = 48000) -> tuple[str, str]:
+    """Create stable strong/weak click sample WAVs via ffmpeg lavfi if missing."""
+    strong = f"/tmp/trackbot_click_strong_{sr}.wav"
+    weak = f"/tmp/trackbot_click_weak_{sr}.wav"
+
+    if not os.path.exists(strong) or os.path.getsize(strong) < 1024:
+        cmd = [
+            'ffmpeg', '-nostdin', '-y',
+            '-f', 'lavfi', '-i', f'sine=frequency=1000:sample_rate={sr}:duration=0.045',
+            '-af', 'afade=t=out:st=0:d=0.045,volume=0.9',
+            '-ac', '1', '-ar', str(sr), '-c:a', 'pcm_s16le', strong
+        ]
+        subprocess.run(cmd, capture_output=True, text=True)
+
+    if not os.path.exists(weak) or os.path.getsize(weak) < 1024:
+        cmd = [
+            'ffmpeg', '-nostdin', '-y',
+            '-i', strong,
+            '-af', 'volume=0.45',
+            '-ac', '1', '-ar', str(sr), '-c:a', 'pcm_s16le', weak
+        ]
+        subprocess.run(cmd, capture_output=True, text=True)
+
+    return strong, weak
+
+
+def _read_wav_mono_pcm16(path: str, sr: int) -> bytes:
+    with wave.open(path, 'rb') as w:
+        ch = w.getnchannels()
+        sw = w.getsampwidth()
+        rate = w.getframerate()
+        frames = w.readframes(w.getnframes())
+    if sw != 2:
+        return b''
+    if rate != sr:
+        return b''
+    if ch == 1:
+        return frames
+    # downmix basic stereo -> mono (take L)
+    out = bytearray()
+    for i in range(0, len(frames), ch * 2):
+        out += frames[i:i+2]
+    return bytes(out)
+
+
 def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4"):
-    """Sample-pattern metronome: assemble bars from strong/weak click samples.
-
-    This avoids per-signature synthesis changes; only pattern changes.
-    """
+    """Sample-based metronome rendering using ffmpeg-generated click assets."""
     num, den = _parse_time_signature(signature)
-    amp = max(0.0, min(1.0, float(volume)))
 
-    # BPM treated as quarter-note pulse.
     quarter_sec = 60.0 / max(1, bpm)
-    unit_sec = quarter_sec if den == 4 else (quarter_sec / 2.0)  # eighth-note units for x/8
+    unit_sec = quarter_sec if den == 4 else (quarter_sec / 2.0)
     unit_samples = max(1, int(round(unit_sec * sr)))
 
-    # Pattern in denominator units (4->quarters, 8->eighths)
     if (num, den) == (2, 4):
         pattern = ['S', 'W']
     elif (num, den) == (3, 4):
@@ -204,42 +243,45 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
     else:
         pattern = ['S', 'W', 'W', 'W']
 
-    click_len = min(int(0.10 * sr), unit_samples)
+    strong_path, weak_path = _ensure_click_samples(sr)
+    strong = _read_wav_mono_pcm16(strong_path, sr)
+    weak = _read_wav_mono_pcm16(weak_path, sr)
+    if not strong or not weak:
+        # fail-safe silence file
+        strong = b'\x00\x00' * min(2400, unit_samples)
+        weak = strong
 
-    def make_click(level: float) -> bytes:
+    # apply requested volume at render-level too (kept conservative)
+    gain = max(0.0, min(1.0, float(volume)))
+    def scale_pcm16(raw: bytes, factor: float) -> bytes:
         out = bytearray()
-        f0 = 55.0
-        scale = amp * level
-        for x in range(click_len):
-            env = math.exp(-7.0 * (x / click_len))
-            sample = scale * env * (
-                0.90 * math.sin(2 * math.pi * f0 * (x / sr)) +
-                0.25 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
-            )
-            v = int(max(-1.0, min(1.0, sample)) * 32767)
-            out += int(v).to_bytes(2, 'little', signed=True)
+        f = max(0.0, min(1.0, factor))
+        for i in range(0, len(raw), 2):
+            v = int.from_bytes(raw[i:i+2], 'little', signed=True)
+            vv = int(max(-32768, min(32767, int(v * f))))
+            out += int(vv).to_bytes(2, 'little', signed=True)
         return bytes(out)
 
-    strong = make_click(1.00)
-    weak = make_click(0.45)
+    strong = scale_pcm16(strong, gain)
+    weak = scale_pcm16(weak, gain)
+
+    click_len = min(len(strong)//2, len(weak)//2, unit_samples)
+    strong = strong[:click_len*2]
+    weak = weak[:click_len*2]
     silence = b'\x00\x00' * (unit_samples - click_len)
 
-    pattern_bytes = bytearray()
+    bar = bytearray()
     for sym in pattern:
-        pattern_bytes += (strong if sym == 'S' else weak)
-        pattern_bytes += silence
+        bar += (strong if sym == 'S' else weak)
+        bar += silence
 
-    # Repeat full bars to fill requested duration.
-    bar_samples = unit_samples * len(pattern)
     total_samples = int(max(1, seconds) * sr)
+    bar_samples = unit_samples * len(pattern)
     bars = max(1, (total_samples + bar_samples - 1) // bar_samples)
-
     buf = bytearray()
     for _ in range(bars):
-        buf += pattern_bytes
-
-    # Trim to exact duration
-    buf = buf[: total_samples * 2]
+        buf += bar
+    buf = buf[:total_samples * 2]
 
     with wave.open(wav_path, 'wb') as w:
         w.setnchannels(1)
@@ -292,7 +334,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v3_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v4_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
