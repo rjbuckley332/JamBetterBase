@@ -393,6 +393,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Keepalive loop: if playback file reaches EOF, restart metronome automatically
     # and keep it running until explicit stop.
     def _keepalive(seq_token: int, launch_cmd: list[str], bpm_token: int):
+        global metronome_proc
         while True:
             time.sleep(0.4)
             with metronome_lock:
