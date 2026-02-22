@@ -736,6 +736,16 @@
                             refreshQueuedWav();
                         };
                         actions.appendChild(loadBtn);
+
+                        // iPhone-friendly play button (inline stream)
+                        const playBtn = document.createElement('a');
+                        playBtn.className = 'btn btn-sm';
+                        playBtn.textContent = '▶︎';
+                        playBtn.title = 'Play';
+                        playBtn.href = '/wav/stream?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                        playBtn.target = '_blank';
+                        playBtn.rel = 'noopener';
+                        actions.appendChild(playBtn);
                     }
 
                     // Download button (all file types)

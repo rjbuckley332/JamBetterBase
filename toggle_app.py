@@ -336,7 +336,7 @@ def _s3_list(prefix: str) -> dict:
     }
 
 
-def _s3_presign(key: str, expires: int = 900) -> dict:
+def _s3_presign(key: str, expires: int = 900, attachment: bool = True) -> dict:
     key = (key or "").lstrip("/")
     allowed1 = f"vps/{LIBRARY_VPS_ID}/recordings/"
     allowed2 = f"vps/{LIBRARY_VPS_ID}/tracks/"
@@ -344,17 +344,19 @@ def _s3_presign(key: str, expires: int = 900) -> dict:
         return {"ok": False, "error": "key not allowed"}
 
     try:
-        # Use boto3 presign so we can force attachment disposition.
-        # Relies on the same ~/.aws credentials the server already has.
         s3 = boto3.client('s3', region_name=LIBRARY_AWS_REGION)
         filename = key.split('/')[-1]
+        params = {
+            'Bucket': LIBRARY_S3_BUCKET,
+            'Key': key,
+        }
+        if attachment:
+            params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
+        else:
+            params['ResponseContentDisposition'] = f'inline; filename="{filename}"'
         url = s3.generate_presigned_url(
             ClientMethod='get_object',
-            Params={
-                'Bucket': LIBRARY_S3_BUCKET,
-                'Key': key,
-                'ResponseContentDisposition': f'attachment; filename="{filename}"',
-            },
+            Params=params,
             ExpiresIn=int(expires),
         )
         return {"ok": True, "url": url, "key": key}
@@ -870,7 +872,21 @@ def wav_download():
     if not file_path:
         return jsonify({"ok": False, "error": "missing file"}), 400
     key = f"vps/{LIBRARY_VPS_ID}/{file_path}"
-    res = _s3_presign(key, expires=300)
+    res = _s3_presign(key, expires=300, attachment=True)
+    if not res.get("ok"):
+        return jsonify(res), 403
+    return redirect(res["url"])
+
+
+@app.route("/wav/stream")
+def wav_stream():
+    ok, resp = _require_passcode()
+    if not ok: return resp
+    file_path = (request.args.get("file") or "").strip()
+    if not file_path:
+        return jsonify({"ok": False, "error": "missing file"}), 400
+    key = f"vps/{LIBRARY_VPS_ID}/{file_path}"
+    res = _s3_presign(key, expires=300, attachment=False)
     if not res.get("ok"):
         return jsonify(res), 403
     return redirect(res["url"])
