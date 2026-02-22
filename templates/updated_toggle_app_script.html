@@ -38,11 +38,13 @@
         }
         .support-widget.open { display: flex; }
         .support-head { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.18); display:flex; justify-content:space-between; align-items:center; }
-        .support-body { padding: 10px 12px; overflow:auto; }
+        .support-body { padding: 10px 12px; overflow:auto; color: #f5f7ff; }
         .support-actions { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
-        .support-log { font-size: 13px; line-height: 1.35; max-height: 220px; overflow:auto; background: rgba(0,0,0,0.25); border-radius:6px; padding:8px; }
+        .support-log { font-size: 13px; line-height: 1.35; max-height: 220px; overflow:auto; background: rgba(0,0,0,0.45); border-radius:6px; padding:8px; color:#f5f7ff; }
         .support-input { display:flex; gap:6px; margin-top:8px; }
         .support-input input { flex:1; }
+        .support-log div { color:#f5f7ff; }
+        .support-log span { color:#b9c2d0; }
         
         .container {
             position: relative;
@@ -244,6 +246,10 @@
             <div class="input-group">
                 <label><b>Session Name:</b></label>
                 <input type="text" id="sessionNameInput" placeholder="Enter name before recording" style="flex:1;min-width:200px;">
+                <label style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="includeInjector"> Include Injector-bot track
+                    <span class="help-tooltip" title="When enabled, Injector-bot WAV is included in uploaded session files.">❓</span>
+                </label>
                 <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
                 <span class="help-tooltip" title="If a backing track is selected, it will automatically play when you start recording">❓</span>
                 <button class="btn btn-warning" onclick="restartBotJamulus()">Restart Bot</button>
@@ -319,7 +325,7 @@
             </div>
             <div id="supportLog" class="support-log"></div>
             <div class="support-input">
-                <input id="supportText" type="text" placeholder="Describe your issue..." />
+                <input id="supportText" type="text" placeholder="Describe your issue..." style="color:#111;" />
                 <button type="button" class="btn btn-sm btn-success" onclick="supportSendText(); return false;">Send</button>
             </div>
         </div>
@@ -360,7 +366,12 @@
                     body: JSON.stringify({ token: supportToken, intent })
                 });
                 const data = await res.json();
-                supportLog(data.message || 'No response');
+                if (!res.ok && data && data.error === 'invalid session token') {
+                    supportToken = null;
+                    await ensureSupportSession();
+                    return supportQuick(intent);
+                }
+                supportLog((data && (data.message || data.error)) || 'No response');
             } catch (e) {
                 supportLog('Support error: ' + e);
             }
@@ -379,7 +390,12 @@
                     body: JSON.stringify({ token: supportToken, text })
                 });
                 const data = await res.json();
-                supportLog(data.message || 'No response');
+                if (!res.ok && data && data.error === 'invalid session token') {
+                    supportToken = null;
+                    await ensureSupportSession();
+                    return supportQuick(intent);
+                }
+                supportLog((data && (data.message || data.error)) || 'No response');
             } catch (e) {
                 supportLog('Support error: ' + e);
             }
@@ -436,7 +452,7 @@
                 const res = await apiFetch("/toggle-recording", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ session_name: name, action: isStarting ? "start" : "stop" })
+                    body: JSON.stringify({ session_name: name, action: isStarting ? "start" : "stop", include_injector: document.getElementById('includeInjector')?.checked || false })
                 });
 
                 if (!res.ok) {
@@ -787,6 +803,11 @@
 
         // Init
         window.onload = function() {
+            const inc = document.getElementById('includeInjector');
+            if (inc) {
+                inc.checked = localStorage.getItem('includeInjector') === '1';
+                inc.addEventListener('change', () => localStorage.setItem('includeInjector', inc.checked ? '1' : '0'));
+            }
             wavRefresh();
             refreshQueuedWav();
             refreshStatuses();

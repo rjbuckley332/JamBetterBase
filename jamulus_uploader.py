@@ -175,15 +175,23 @@ def consume_name(map_file: str, key: str):
         pass
 
 
-def wav_should_exclude(basename: str) -> bool:
+def include_injector_enabled() -> bool:
+    try:
+        v = Path(INCLUDE_INJECTOR_FLAG).read_text().strip().lower()
+        return v in ('1', 'true', 'yes', 'on')
+    except Exception:
+        return False
+
+def wav_should_exclude(basename: str, include_injector: bool = False) -> bool:
     """Exclude injector bot and any obvious non-singer tracks."""
     b = (basename or '').lower()
     if b.startswith('no_name-') and '127_0_0_1' in b:
         return True
-    if 'injector-bot' in b or 'injector_bot' in b or 'injectorbot' in b:
-        return True
-    if 'injector' in b and b.endswith('.wav'):
-        return True
+    if not include_injector:
+        if 'injector-bot' in b or 'injector_bot' in b or 'injectorbot' in b:
+            return True
+        if 'injector' in b and b.endswith('.wav'):
+            return True
     return False
 
 
@@ -211,7 +219,7 @@ def create_leveled_mix_mp3(session_folder: Path, output_base: str,
     for p in sorted(session_folder.glob('*.wav')):
         if p.stat().st_size < 10240:
             continue
-        if wav_should_exclude(p.name):
+        if wav_should_exclude(p.name, include_injector=False):
             continue
         wavs.append(p)
 
@@ -368,9 +376,10 @@ def main():
 
                 ok_all = True
 
-                # Upload singer wavs (friendly names)
+                include_injector = include_injector_enabled()
+                # Upload singer wavs (friendly names; injector optional)
                 for w in sorted(wavs):
-                    if wav_should_exclude(w.name):
+                    if wav_should_exclude(w.name, include_injector=include_injector):
                         continue
                     part4 = _client_code_from_wav(w)
                     dest_name = f"{fold6}_{yymmdd}_{part4}.wav"

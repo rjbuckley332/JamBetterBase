@@ -44,6 +44,7 @@ BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
 RECORDING_FLAG  = "/tmp/jamulus_recording.flag"  # legacy UI flag (not authoritative)
 LOCK_FILE       = "/tmp/jamulus_locked.flag"
 SESSION_STATUS  = "/tmp/jamulus_session_active.flag"  # legacy UI flag (not authoritative)
+INCLUDE_INJECTOR_FLAG = "/tmp/jamulus_include_injector.flag"
 
 # Jamulus recordings parent dir
 RECORDINGS_DIR  = "/var/lib/jamulus/recordings"
@@ -479,6 +480,13 @@ def toggle_recording():
     data  = request.get_json(force=True)
     name  = (data.get("session_name") or "").strip()
     action = (data.get("action") or "").strip().lower()
+    include_injector = bool(data.get("include_injector", False))
+
+    # Persist user preference for uploader behavior
+    try:
+        Path(INCLUDE_INJECTOR_FLAG).write_text("1" if include_injector else "0")
+    except Exception:
+        pass
 
     if action not in ("start", "stop"):
         return "Invalid action", 400
