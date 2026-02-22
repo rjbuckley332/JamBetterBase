@@ -797,7 +797,9 @@
                 const metroData = await metroRes.json();
                 const isRunning = metroData.running || false;
                 const sigEl = document.getElementById('metroSig');
-                if (sigEl && metroData.sig) {
+                // Only mirror backend signature while metronome is actively running,
+                // otherwise preserve user selection in the UI.
+                if (isRunning && sigEl && metroData.sig) {
                     sigEl.value = metroData.sig;
                     const sv = document.getElementById('sigVal'); if (sv) sv.textContent = metroData.sig;
                 }
