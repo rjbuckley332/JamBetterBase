@@ -796,13 +796,8 @@
                 const metroRes = await apiFetch('/metronome/status');
                 const metroData = await metroRes.json();
                 const isRunning = metroData.running || false;
-                const sigEl = document.getElementById('metroSig');
-                // Only mirror backend signature while metronome is actively running,
-                // otherwise preserve user selection in the UI.
-                if (isRunning && sigEl && metroData.sig) {
-                    sigEl.value = metroData.sig;
-                    const sv = document.getElementById('sigVal'); if (sv) sv.textContent = metroData.sig;
-                }
+                // Do not overwrite user-selected signature from status polling.
+                // (backend can lag briefly; forcing value here causes selector snap-back)
                 if (isRunning !== metronomeRunning) {
                     metronomeRunning = isRunning;
                     const btn = document.getElementById('metroToggleBtn');
