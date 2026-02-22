@@ -178,17 +178,19 @@ def _parse_time_signature(sig: str) -> tuple[int, int]:
 
 
 def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4"):
-    """Generate a mono 16-bit PCM WAV metronome track.
+    """Generate metronome WAV using one stable (6/8-like) audio engine for all signatures.
 
-    Known-good monotone timbre + simple beat-1 accent, generated efficiently.
+    Only accent schedule changes by signature.
     """
     num, den = _parse_time_signature(signature)
     amp = max(0.0, min(1.0, float(volume)))
 
+    # 6/8-base timing engine: quarter-note pulse at BPM (known-clean path)
     beat_seconds = 60.0 / max(1, bpm)
     beat_samples = max(1, int(round(beat_seconds * sr)))
     click_len = min(int(0.12 * sr), beat_samples)
 
+    # Measure grouping only (sound engine unchanged)
     if (num, den) == (6, 8):
         beats_per_bar = 2
     elif (num, den) == (12, 8):
@@ -198,9 +200,11 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
 
     total_beats = max(1, int(round(seconds / beat_seconds)))
 
+    # One stable timbre for all signatures
+    f0 = 55.0
+
     def build_click(accent: float) -> bytes:
         out = bytearray()
-        f0 = 55.0
         scale = amp * accent
         for x in range(click_len):
             env = math.exp(-7.0 * (x / click_len))
@@ -227,8 +231,6 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes(bytes(buf))
-
-
 
 
 
@@ -275,7 +277,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v2_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
