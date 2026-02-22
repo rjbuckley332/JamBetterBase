@@ -87,9 +87,20 @@ def _load_servers():
     return []
 
 
+def _fqdn_label(url: str) -> str:
+    try:
+        u = urllib.parse.urlparse(url)
+        host = (u.hostname or '').strip()
+        if not host:
+            return ''
+        return host.split('.')[0]
+    except Exception:
+        return ''
+
 def _poll_server(entry: dict):
-    name = entry.get('name') or entry.get('id') or 'unknown'
     url = entry.get('url') or ''
+    label = _fqdn_label(url)
+    name = label or entry.get('name') or entry.get('id') or 'unknown'
     token = entry.get('token') or ''
     timeout = float(entry.get('timeout', 4.0))
     if not url:
