@@ -409,6 +409,12 @@ def stop_metronome():
             except Exception:
                 pass
 
+    # Hard cleanup any orphan metronome playback processes.
+    try:
+        subprocess.run(['pkill', '-f', 'pw-cat -p .*node.name=trackbot_metro'], capture_output=True, text=True, env=_pw_env())
+    except Exception:
+        pass
+
 
 class Handler(BaseHTTPRequestHandler):
 
