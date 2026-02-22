@@ -1,0 +1,10 @@
+{
+  "servers": [
+    {
+      "id": "vps-0001",
+      "name": "vps-0001",
+      "url": "http://127.0.0.1:5090/health",
+      "timeout": 4
+    }
+  ]
+}
