@@ -649,6 +649,21 @@ def _support_make_session(customer_id: str, server_id: str, room_name: str) -> d
     return {'ok': True, 'token': token, **_support_sessions[token]}
 
 
+def _read_ops_health() -> dict:
+    path = '/tmp/jambetter_health.json'
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {'ok': False, 'error': 'no health snapshot yet', 'path': path}
+
+
+def _run_healthcheck_now():
+    try:
+        subprocess.run(['/usr/bin/python3', '/home/nds/healthcheck.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except Exception:
+        pass
+
 def _support_status_payload() -> dict:
     enabled = jamulus_recording_enabled()
     if enabled is None:
@@ -789,6 +804,23 @@ def api_support_status():
     if not ok:
         return resp
     return jsonify(_support_status_payload())
+
+
+@app.route('/ops/health')
+def ops_health():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    _run_healthcheck_now()
+    return jsonify(_read_ops_health())
+
+
+@app.route('/ops')
+def ops_dashboard():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    return render_template('ops_dashboard.html')
 
 @app.route('/wav/browse')
 def wav_browse():
