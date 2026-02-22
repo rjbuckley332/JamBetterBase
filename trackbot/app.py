@@ -334,7 +334,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v6_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v7_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
