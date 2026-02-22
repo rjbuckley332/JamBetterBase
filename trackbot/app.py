@@ -192,36 +192,30 @@ def _accent_for_beat(idx: int, num: int, den: int) -> float:
     if (num, den) == (2,4):
         return 0.58
     if (num, den) == (6,8):
-        return 0.66 if idx == 1 else 1.00 if idx==0 else 0.50
+        return 0.70 if idx == 1 else 1.00
     if (num, den) == (12,8):
-        return 0.70 if idx in (1,2,3) else 1.00
+        return 0.72 if idx in (1,2,3) else 1.00
     return 0.55
 
 
 def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4"):
     """Generate a mono 16-bit PCM WAV metronome track.
 
-    Sound: low thump (80Hz sine burst with decay) once per beat.
+    Uses known-clean thump voice, with signature-based beat grouping/accents.
     """
     num, den = _parse_time_signature(signature)
     frames = int(seconds * sr)
-    click_len = int(0.018 * sr)  # 18ms short, clean click
+    click_len = int(0.12 * sr)  # 120ms
     amp = max(0.0, min(1.0, float(volume)))
 
-    # Feel-based beat spacing:
-    # 2/4,3/4,4/4 -> quarter-note pulse at BPM
-    # 6/8 -> 2 beats/bar (dotted-quarter pulse)
-    # 12/8 -> 4 beats/bar (dotted-quarter pulse)
     if (num, den) == (6, 8):
         beats_per_bar = 2
-        beat_seconds = 60.0 / max(1, bpm)
     elif (num, den) == (12, 8):
         beats_per_bar = 4
-        beat_seconds = 60.0 / max(1, bpm)
     else:
         beats_per_bar = num
-        beat_seconds = 60.0 / max(1, bpm)
 
+    beat_seconds = 60.0 / max(1, bpm)
     beat_samples = max(1, int(round(beat_seconds * sr)))
 
     buf = bytearray()
@@ -230,12 +224,13 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
         beat_idx = (i // beat_samples) % beats_per_bar
         if beat_pos < click_len:
             x = beat_pos
-            # very fast attack/decay envelope for percussive click
-            t = x / click_len
-            env = (1.0 - t) ** 2
+            env = math.exp(-7.0 * (x / click_len))
             accent = _accent_for_beat(int(beat_idx), num, den)
-            f0 = 1700.0 if beat_idx == 0 else 1200.0
-            sample = (amp * accent * 0.42) * env * math.sin(2 * math.pi * f0 * (x / sr))
+            f0 = 55.0 if beat_idx != 0 else 65.0
+            sample = (amp * accent) * env * (
+                0.90 * math.sin(2 * math.pi * f0 * (x / sr)) +
+                0.25 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
+            )
         else:
             sample = 0.0
         v = int(max(-1.0, min(1.0, sample)) * 32767)
@@ -246,6 +241,7 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes(bytes(buf))
+
 
 
 
