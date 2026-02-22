@@ -43,6 +43,29 @@
         .support-log { font-size: 13px; line-height: 1.35; max-height: 220px; overflow:auto; background: rgba(0,0,0,0.45); border-radius:6px; padding:8px; color:#f5f7ff; }
         .support-input { display:flex; gap:6px; margin-top:8px; }
         .support-input input { flex:1; }
+
+        .toast-stack {
+            position: fixed;
+            right: 14px;
+            top: 14px;
+            z-index: 140;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: min(92vw, 420px);
+        }
+        .toast-item {
+            background: rgba(22, 110, 56, 0.95);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 10px;
+            padding: 10px 12px;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+            font-size: 14px;
+            line-height: 1.35;
+        }
+        .toast-item a { color: #fff; text-decoration: underline; }
+
         .support-log div { color:#f5f7ff; }
         .support-log span { color:#b9c2d0; }
         
@@ -139,7 +162,7 @@
         
         .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         
-        .file-actions { display: flex; gap: 5px; }
+        .file-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
         
         .browser-header {
             display: flex;
@@ -237,6 +260,8 @@
         }
     
         @media (max-width: 768px) {
+            .file-actions { width: 100%; justify-content: flex-start; }
+            .file-actions .btn { font-size: 14px; padding: 8px 10px; }
             .metro-row { flex-direction: column; align-items: stretch; gap: 6px; }
             .metro-row label { min-width: 0; }
             #metroSig { width: 100%; font-size: 18px; padding: 10px; }
@@ -363,6 +388,8 @@
         </div>
     </div>
 
+    <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
     <script>
         // State
 
@@ -447,6 +474,18 @@
         let metronomeRunning = false;
         let playbackRunning = false;
         let wavCurrentPath = "recordings/";
+        const seenDirsByPath = {};
+
+        function showToast(html, ms=7000) {
+            const stack = document.getElementById('toastStack');
+            if (!stack) return;
+            const el = document.createElement('div');
+            el.className = 'toast-item';
+            el.innerHTML = html;
+            stack.appendChild(el);
+            setTimeout(() => { try { el.remove(); } catch(e) {} }, ms);
+        }
+
         
         // Simple API fetch
         async function apiFetch(url, opts) {
@@ -688,6 +727,23 @@
                 const data = await res.json();
                 const filesDiv = document.getElementById('wavFiles');
                 filesDiv.innerHTML = '';
+
+                // New-folder notification (in-page)
+                const pathKey = wavCurrentPath;
+                const dirsNow = (data.dirs || []).slice();
+                const prev = seenDirsByPath[pathKey];
+                if (prev) {
+                    const prevSet = new Set(prev);
+                    const added = dirsNow.filter(d => !prevSet.has(d));
+                    for (const d of added) {
+                        const targetPath = pathKey + d + '/';
+                        const openJs = `wavCurrentPath='${targetPath}';document.getElementById('wavPath').textContent='/' + wavCurrentPath;wavRefresh();`;
+                        showToast(`✅ New session ready: <b>${d}</b><br><a href="#" onclick="${openJs};return false;">Open folder</a> · <a href="/wav/download-folder?path=${encodeURIComponent('/'+targetPath)}" target="_blank" rel="noopener">Download ZIP</a>`);
+                        try { if (navigator.vibrate) navigator.vibrate(70); } catch(e) {}
+                    }
+                }
+                seenDirsByPath[pathKey] = dirsNow;
+
                 
                 // Folders (hide old 'tmp' folder, only show 'temp')
                 (data.dirs || []).filter(d => d !== 'tmp').forEach(d => {
@@ -739,8 +795,8 @@
 
                         // iPhone-friendly play button (inline stream)
                         const playBtn = document.createElement('a');
-                        playBtn.className = 'btn btn-sm';
-                        playBtn.textContent = '▶︎';
+                        playBtn.className = 'btn btn-sm btn-info';
+                        playBtn.textContent = '▶︎ Play';
                         playBtn.title = 'Play';
                         playBtn.href = '/wav/stream?file=' + encodeURIComponent(wavCurrentPath + f.name);
                         playBtn.target = '_blank';
