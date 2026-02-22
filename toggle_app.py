@@ -653,18 +653,52 @@ def _support_status_payload() -> dict:
     enabled = jamulus_recording_enabled()
     if enabled is None:
         enabled = _has_recent_recording_writes()
+
     jamulus_running = False
     try:
         result = subprocess.run(['pgrep', '-x', 'jamulus'], capture_output=True)
         jamulus_running = result.returncode == 0
     except Exception:
         pass
+
+    # Lightweight server-side quality indicators (infrastructure health only)
+    try:
+        l1, l5, l15 = os.getloadavg()
+    except Exception:
+        l1, l5, l15 = (0.0, 0.0, 0.0)
+    cores = os.cpu_count() or 1
+    load_ratio = float(l1) / float(max(1, cores))
+
+    if not jamulus_running:
+        grade = 'red'
+        label = 'Server issue'
+    elif load_ratio < 0.70:
+        grade = 'green'
+        label = 'Good'
+    elif load_ratio < 1.10:
+        grade = 'yellow'
+        label = 'Busy'
+    else:
+        grade = 'red'
+        label = 'Overloaded'
+
+    quality = {
+        'grade': grade,
+        'label': label,
+        'load1': round(float(l1), 2),
+        'load5': round(float(l5), 2),
+        'cores': int(cores),
+        'load_ratio': round(load_ratio, 2),
+        'note': 'Server-side health only; user network/device quality may still vary.'
+    }
+
     return {
         'ok': True,
         'server_id': LIBRARY_VPS_ID,
         'jamulus_running': jamulus_running,
         'recording_state': 'ON' if enabled else 'OFF',
-        'status_text': 'Online' if jamulus_running else 'Offline'
+        'status_text': 'Online' if jamulus_running else 'Offline',
+        'quality': quality,
     }
 
 

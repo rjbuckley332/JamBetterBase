@@ -428,9 +428,14 @@
                 if (!res.ok && data && data.error === 'invalid session token') {
                     supportToken = null;
                     await ensureSupportSession();
-                    return supportQuick(intent);
+                    return supportSendText(text);
                 }
                 supportLog((data && (data.message || data.error)) || 'No response');
+                if (intent === 'status' && data && data.data && data.data.quality) {
+                    const q = data.data.quality;
+                    const badge = q.grade === 'green' ? '🟢' : (q.grade === 'yellow' ? '🟡' : '🔴');
+                    supportLog(`${badge} Quality: ${q.label} · load ${q.load1}/${q.cores} cores`);
+                }
             } catch (e) {
                 supportLog('Support error: ' + e);
             }
@@ -452,7 +457,7 @@
                 if (!res.ok && data && data.error === 'invalid session token') {
                     supportToken = null;
                     await ensureSupportSession();
-                    return supportQuick(intent);
+                    return supportSendText(text);
                 }
                 supportLog((data && (data.message || data.error)) || 'No response');
             } catch (e) {
