@@ -385,7 +385,11 @@
                 <div style="display:flex; gap:6px; flex-wrap:wrap;">
                     <input id="cqPing" type="number" placeholder="Ping ms" style="width:88px;" />
                     <input id="cqDelay" type="number" placeholder="Delay ms" style="width:88px;" />
-                    <input id="cqJitter" type="number" placeholder="Jitter ms" style="width:88px;" />
+                    <select id="cqJitterState" style="min-width:170px;">
+                        <option value="green">🟢 Mostly green</option>
+                        <option value="mixed">🟡 Mixed (occasional red)</option>
+                        <option value="red">🔴 Frequent red</option>
+                    </select>
                     <button type="button" class="btn btn-sm btn-info" onclick="analyzeClientQuality(); return false;">Analyze</button>
                 </div>
             </div>
@@ -419,15 +423,16 @@
         function analyzeClientQuality() {
             const ping = parseFloat(document.getElementById('cqPing')?.value || '0');
             const delay = parseFloat(document.getElementById('cqDelay')?.value || '0');
-            const jitter = parseFloat(document.getElementById('cqJitter')?.value || '0');
+            const jitterState = (document.getElementById('cqJitterState')?.value || 'green');
 
             let score = 100;
             if (ping > 60) score -= 15;
             if (ping > 90) score -= 20;
             if (delay > 45) score -= 15;
             if (delay > 70) score -= 20;
-            if (jitter > 8) score -= 20;
-            if (jitter > 15) score -= 25;
+
+            if (jitterState === 'mixed') score -= 18;
+            if (jitterState === 'red') score -= 35;
 
             let verdict = 'Good';
             let badge = '🟢';
@@ -442,7 +447,8 @@
                 badge = '🔴';
                 action = 'Network instability likely. Use wired ethernet, close background traffic, retry.';
             }
-            supportLog(`${badge} Client quality: ${verdict} (score ${Math.max(0,score)}/100) · ping ${ping||0}ms · delay ${delay||0}ms · jitter ${jitter||0}ms`);
+            const jitterLabel = jitterState === 'green' ? 'mostly green' : (jitterState === 'mixed' ? 'mixed/occasional red' : 'frequent red');
+            supportLog(`${badge} Client quality: ${verdict} (score ${Math.max(0,score)}/100) · ping ${ping||0}ms · delay ${delay||0}ms · jitter ${jitterLabel}`);
             supportLog(`ℹ️ Recommendation: ${action}`);
         }
 
