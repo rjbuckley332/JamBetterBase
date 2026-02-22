@@ -175,6 +175,36 @@ def consume_name(map_file: str, key: str):
         pass
 
 
+def lookup_include_injector(map_file: str, key: str) -> bool | None:
+    """Resolve include_injector for a jam key from csv: key,0|1 (latest wins)."""
+    if not map_file or not key or not os.path.exists(map_file):
+        return None
+    try:
+        with open(map_file, newline='', encoding='utf-8') as f:
+            rows = list(csv.reader(f))
+        # latest exact match wins
+        for row in reversed(rows):
+            if not row or len(row) < 2:
+                continue
+            k = (row[0] or '').strip()
+            v = (row[1] or '').strip().lower()
+            if k == key:
+                return v in ('1','true','yes','on')
+        # tolerate timezone drift ±4/±5h
+        t = _parse_map_key_ts(key)
+        if t is not None:
+            for h in (4,5,-4,-5):
+                kk = (t + timedelta(hours=h)).strftime('%Y%m%d_%H%M%S')
+                for row in reversed(rows):
+                    if not row or len(row) < 2:
+                        continue
+                    if (row[0] or '').strip() == kk:
+                        v = (row[1] or '').strip().lower()
+                        return v in ('1','true','yes','on')
+    except Exception:
+        return None
+    return None
+
 def include_injector_enabled() -> bool:
     try:
         v = Path(INCLUDE_INJECTOR_FLAG).read_text().strip().lower()
@@ -376,7 +406,9 @@ def main():
 
                 ok_all = True
 
-                include_injector = include_injector_enabled()
+                include_injector = lookup_include_injector(INCLUDE_INJECTOR_MAP_FILE, key)
+                if include_injector is None:
+                    include_injector = include_injector_enabled()
                 # Upload singer wavs (friendly names; injector optional)
                 for w in sorted(wavs):
                     if wav_should_exclude(w.name, include_injector=include_injector):

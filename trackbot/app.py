@@ -255,7 +255,7 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
     gain = max(0.0, min(1.0, float(volume)))
     def scale_pcm16(raw: bytes, factor: float) -> bytes:
         out = bytearray()
-        f = max(0.0, min(1.6, factor))
+        f = max(0.0, min(1.2, factor))
         for i in range(0, len(raw), 2):
             v = int.from_bytes(raw[i:i+2], 'little', signed=True)
             vv = int(max(-32768, min(32767, int(v * f))))
@@ -319,7 +319,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     if bpm > 240: bpm = 240
     vol = float(volume)
     if vol < 0: vol = 0.0
-    if vol > 1.5: vol = 1.5
+    if vol > 1.2: vol = 1.2
     sig = (signature or "4/4").strip()
 
     with metronome_lock:

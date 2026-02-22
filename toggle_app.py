@@ -45,6 +45,7 @@ RECORDING_FLAG  = "/tmp/jamulus_recording.flag"  # legacy UI flag (not authorita
 LOCK_FILE       = "/tmp/jamulus_locked.flag"
 SESSION_STATUS  = "/tmp/jamulus_session_active.flag"  # legacy UI flag (not authoritative)
 INCLUDE_INJECTOR_FLAG = "/tmp/jamulus_include_injector.flag"
+INCLUDE_INJECTOR_MAP_CSV = "/tmp/jamulus_include_injector_map.csv"
 
 # Jamulus recordings parent dir
 RECORDINGS_DIR  = "/var/lib/jamulus/recordings"
@@ -485,6 +486,11 @@ def toggle_recording():
     # Persist user preference for uploader behavior
     try:
         Path(INCLUDE_INJECTOR_FLAG).write_text("1" if include_injector else "0")
+    except Exception:
+        pass
+    try:
+        with open(INCLUDE_INJECTOR_MAP_CSV, "a", newline="") as f:
+            f.write(f"{_recording_map_key_now()},{1 if include_injector else 0}\n")
     except Exception:
         pass
 
