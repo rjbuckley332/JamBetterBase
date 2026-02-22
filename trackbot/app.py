@@ -33,12 +33,11 @@ metronome_thread = None
 metronome_bpm = None
 metronome_proc = None
 metronome_volume = 0.8
-metronome_sig = "4/4"
 metronome_seq = 0  # incrementing token to cancel stale async linkers
 
 # Debounce metronome updates so sliders can feel realtime without thrashing
 # the audio process on every tiny movement.
-metronome_pending = {'bpm': None, 'vol': None, 'sig': None}
+metronome_pending = {'bpm': None, 'vol': None}
 metronome_debounce_thread = None
 metronome_debounce_evt = threading.Event()
 metronome_debounce_delay = 0.20  # seconds
@@ -164,73 +163,29 @@ def start_playback(relpath):
 
 
 
-def _parse_time_signature(sig: str) -> tuple[int, int]:
-    s = (sig or '4/4').strip()
-    try:
-        a, b = s.split('/', 1)
-        n = int(a); d = int(b)
-    except Exception:
-        return (4, 4)
-    if n not in (2,3,4,6,12):
-        n = 4
-    if d not in (4,8):
-        d = 4
-    # constrain supported list
-    if (n, d) not in {(2,4),(3,4),(4,4),(6,8),(12,8)}:
-        return (4,4)
-    return (n, d)
-
-
-def _accent_for_beat(idx: int, num: int, den: int) -> float:
-    # strong downbeat + lighter secondary accents
-    if idx == 0:
-        return 1.00
-    if (num, den) == (4,4):
-        return 0.68 if idx == 2 else 0.35
-    if (num, den) == (3,4):
-        return 0.38
-    if (num, den) == (2,4):
-        return 0.42
-    if (num, den) == (6,8):
-        return 0.60 if idx == 1 else 1.00
-    if (num, den) == (12,8):
-        return 0.62
-    return 0.55
-
-
-def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4"):
+def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25):
     """Generate a mono 16-bit PCM WAV metronome track.
 
-    Uses known-clean thump voice, with signature-based beat grouping/accents.
+    Sound: low thump (80Hz sine burst with decay) once per beat.
     """
-    num, den = _parse_time_signature(signature)
+    beat_hz = bpm / 60.0
     frames = int(seconds * sr)
     click_len = int(0.12 * sr)  # 120ms
-    amp = max(0.0, min(1.0, float(volume)))
-
-    if (num, den) == (6, 8):
-        beats_per_bar = 2
-    elif (num, den) == (12, 8):
-        beats_per_bar = 4
-    else:
-        beats_per_bar = num
-
-    beat_seconds = 60.0 / max(1, bpm)
-    beat_samples = max(1, int(round(beat_seconds * sr)))
+    # Allow slightly >1.0 for a bit more headroom; hard-clipped below
+    amp = max(0.0, min(1.5, float(volume)))
 
     buf = bytearray()
     for i in range(frames):
-        beat_pos = i % beat_samples
-        beat_idx = (i // beat_samples) % beats_per_bar
-        if beat_pos < click_len:
-            x = beat_pos
+        t = i / sr
+        phase = (t * beat_hz) % 1.0
+        if phase < (click_len / sr):
+            x = phase * sr
             env = math.exp(-7.0 * (x / click_len))
-            accent = _accent_for_beat(int(beat_idx), num, den)
-            f0 = 62.0 if beat_idx == 0 else 120.0
-            harm = 0.20 if beat_idx == 0 else 0.08
-            sample = (amp * accent) * env * (
+            # Lower fundamental for a deeper "thump" + a touch of 2nd harmonic
+            f0 = 55.0
+            sample = amp * env * (
                 0.90 * math.sin(2 * math.pi * f0 * (x / sr)) +
-                harm * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
+                0.25 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
             )
         else:
             sample = 0.0
@@ -242,7 +197,6 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes(bytes(buf))
-
 
 
 
@@ -265,9 +219,9 @@ def _connect_port_to_jamulus(port: str):
 
 
 
-def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
+def _apply_metronome_now(bpm: int, volume: float):
     """Apply metronome change immediately (restarts the audio process)."""
-    global metronome_proc, metronome_bpm, metronome_bpm, metronome_volume, metronome_sig, metronome_seq
+    global metronome_proc, metronome_bpm, metronome_volume, metronome_seq
 
     bpm = int(bpm)
     if bpm < 40: bpm = 40
@@ -275,13 +229,11 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     vol = float(volume)
     if vol < 0: vol = 0.0
     if vol > 1.5: vol = 1.5
-    sig = signature if signature else "4/4"
 
     with metronome_lock:
         metronome_seq += 1
         my_seq = metronome_seq
         metronome_volume = vol
-        metronome_sig = sig
 
     # Stop existing instance before starting a new one
     stop_metronome()
@@ -291,10 +243,10 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     wav_path = f"/tmp/trackbot_metro_{bpm}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
-            _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
+            _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0)
     except Exception:
         # If generation fails for any reason, fall back to a small file
-        _generate_click_wav(wav_path, bpm=bpm, seconds=15, sr=48000, volume=1.0, signature=sig)
+        _generate_click_wav(wav_path, bpm=bpm, seconds=15, sr=48000, volume=1.0)
 
     cmd = [
         'pw-cat', '-p',
@@ -365,15 +317,12 @@ def _ensure_metronome_debouncer():
             with metronome_lock:
                 bpm = metronome_pending.get('bpm')
                 vol = metronome_pending.get('vol')
-                sig = metronome_pending.get('sig')
 
             if bpm is None or vol is None:
                 continue
-            if sig is None:
-                sig = "4/4"
 
             try:
-                _apply_metronome_now(bpm, vol, sig)
+                _apply_metronome_now(bpm, vol)
             except Exception as e:
                 with state['lock']:
                     state['last_err'] = f"Metronome update failed: {e}"
@@ -382,22 +331,21 @@ def _ensure_metronome_debouncer():
     metronome_debounce_thread.start()
 
 
-def start_metronome(bpm: int, volume: float = 0.8, signature: str = "4/4"):
+def start_metronome(bpm: int, volume: float = 0.8):
     """Start/update metronome immediately.
 
     The web UI already debounces slider events, so we don't need extra
     debounce logic here.
     """
-    _apply_metronome_now(bpm, volume, signature)
+    _apply_metronome_now(bpm, volume)
 
 def stop_metronome():
     """Stop metronome precisely: kill pw-cat and unlink its ports."""
-    global metronome_proc, metronome_bpm
+    global metronome_proc
 
     with metronome_lock:
         proc = metronome_proc
         metronome_proc = None
-        metronome_bpm = None
 
     # Unlink any existing metro links (ignore errors).
     try:
@@ -469,9 +417,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/metronome/start':
                 bpm = int(q.get('bpm', ['100'])[0] or 100)
                 vol = float(q.get('vol', ['0.8'])[0] or 0.8)
-                sig = (q.get('sig', ['4/4'])[0] or '4/4')
-                start_metronome(bpm, vol, sig)
-                self._send(200, json.dumps({'ok': True, 'bpm': bpm, 'vol': vol, 'sig': sig}), ctype='application/json; charset=utf-8')
+                start_metronome(bpm, vol)
+                self._send(200, json.dumps({'ok': True, 'bpm': bpm, 'vol': vol}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/metronome/stop':
                 stop_metronome()
@@ -480,9 +427,15 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/metronome/status':
                 proc = metronome_proc
                 running = bool(proc and proc.poll() is None)
+                if not running:
+                    # Fallback: if a pw-cat metronome process exists, treat as running (fixes UI realtime sliders)
+                    try:
+                        running = (subprocess.run(["pgrep","-u","nds","-f","pw-cat -p .*node.name=trackbot_metro"], capture_output=True).returncode == 0)
+                    except Exception:
+                        pass
                 with state['lock']:
                     last_err = state.get('last_err')
-                self._send(200, json.dumps({'ok': True, 'running': running, 'bpm': metronome_bpm, 'vol': metronome_volume, 'sig': metronome_sig, 'last_err': last_err}), ctype='application/json; charset=utf-8')
+                self._send(200, json.dumps({'ok': True, 'running': running, 'bpm': metronome_bpm, 'vol': metronome_volume, 'last_err': last_err}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/playback/status':
                 with state['lock']:
