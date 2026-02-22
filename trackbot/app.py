@@ -205,8 +205,8 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
     """
     num, den = _parse_time_signature(signature)
     frames = int(seconds * sr)
-    click_len = int(0.07 * sr)  # 70ms
-    amp = max(0.0, min(1.5, float(volume)))
+    click_len = int(0.018 * sr)  # 18ms short, clean click
+    amp = max(0.0, min(1.0, float(volume)))
 
     # Feel-based beat spacing:
     # 2/4,3/4,4/4 -> quarter-note pulse at BPM
@@ -230,13 +230,12 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
         beat_idx = (i // beat_samples) % beats_per_bar
         if beat_pos < click_len:
             x = beat_pos
-            env = math.exp(-7.0 * (x / click_len))
+            # very fast attack/decay envelope for percussive click
+            t = x / click_len
+            env = (1.0 - t) ** 2
             accent = _accent_for_beat(int(beat_idx), num, den)
-            f0 = 90.0 if beat_idx == 0 else 65.0
-            sample = (amp * accent * 0.72) * env * (
-                1.00 * math.sin(2 * math.pi * f0 * (x / sr)) +
-                0.08 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
-            )
+            f0 = 1700.0 if beat_idx == 0 else 1200.0
+            sample = (amp * accent * 0.42) * env * math.sin(2 * math.pi * f0 * (x / sr))
         else:
             sample = 0.0
         v = int(max(-1.0, min(1.0, sample)) * 32767)
