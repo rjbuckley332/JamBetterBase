@@ -118,6 +118,13 @@
             border-radius: 4px;
             font-size: 13px;
         }
+
+        .metro-controls { display: flex; flex-direction: column; gap: 10px; }
+        .metro-row { display: flex; align-items: center; gap: 10px; }
+        .metro-row label { min-width: 110px; font-weight: 600; }
+        .metro-row input[type="range"] { flex: 1; max-width: none; }
+        .metro-time-row select { min-width: 130px; }
+        .metro-actions { display: flex; justify-content: flex-start; }
         
         .file-row {
             display: flex;
@@ -228,7 +235,16 @@
                 gap: 8px;
             }
         }
-    </style>
+    
+        @media (max-width: 768px) {
+            .metro-row { flex-direction: column; align-items: stretch; gap: 6px; }
+            .metro-row label { min-width: 0; }
+            #metroSig { width: 100%; font-size: 18px; padding: 10px; }
+            #metroBpm, #metroVol { width: 100%; height: 34px; }
+            #metroToggleBtn { width: 100%; font-size: 20px; padding: 12px 14px; text-align: left; }
+        }
+
+</style>
 </head>
 <body>
     <div class="container">
@@ -263,20 +279,28 @@
         <!-- METRONOME -->
         <div class="section">
             <h3>🥁 Metronome (everyone hears it)</h3>
-            <div class="slider-group">
-                <label>BPM: <span id="bpmVal">100</span></label>
-                <input type="range" id="metroBpm" min="40" max="200" value="100" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
-                <label>Vol: <span id="volVal">80</span>%</label>
-                <input type="range" id="metroVol" min="0" max="100" value="80" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
-                <label>Time: <span id="sigVal">4/4</span></label>
-                <select id="metroSig" onchange="document.getElementById('sigVal').textContent=this.value; scheduleMetronomeUpdate();">
-                    <option value="2/4">2/4</option>
-                    <option value="3/4">3/4</option>
-                    <option value="4/4" selected>4/4</option>
-                    <option value="6/8">6/8</option>
-                    <option value="12/8">12/8</option>
-                </select>
-                <button id="metroToggleBtn" class="btn btn-success" onclick="toggleMetronome()">Start</button>
+            <div class="metro-controls">
+                <div class="metro-row">
+                    <label>BPM: <span id="bpmVal">100</span></label>
+                    <input type="range" id="metroBpm" min="40" max="200" value="100" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
+                </div>
+                <div class="metro-row">
+                    <label>Vol: <span id="volVal">80</span>%</label>
+                    <input type="range" id="metroVol" min="0" max="100" value="80" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
+                </div>
+                <div class="metro-row metro-time-row">
+                    <label>Time: <span id="sigVal">4/4</span></label>
+                    <select id="metroSig" onchange="document.getElementById('sigVal').textContent=this.value; scheduleMetronomeUpdate();">
+                        <option value="2/4">2/4</option>
+                        <option value="3/4">3/4</option>
+                        <option value="4/4" selected>4/4</option>
+                        <option value="6/8">6/8</option>
+                        <option value="12/8">12/8</option>
+                    </select>
+                </div>
+                <div class="metro-actions">
+                    <button id="metroToggleBtn" class="btn btn-success" onclick="toggleMetronome()">Start</button>
+                </div>
             </div>
         </div>
 
