@@ -178,27 +178,26 @@ def _parse_time_signature(sig: str) -> tuple[int, int]:
 
 
 def _ensure_click_samples(sr: int = 48000) -> tuple[str, str]:
-    """Create stable strong/weak click sample WAVs via ffmpeg lavfi if missing."""
-    strong = f"/tmp/trackbot_click_strong_{sr}.wav"
-    weak = f"/tmp/trackbot_click_weak_{sr}.wav"
+    """Return static strong/weak click samples (repo assets) and transcode if needed."""
+    base = Path('/home/nds/trackbot/samples')
+    src_strong = base / 'click_strong.wav'
+    src_weak = base / 'click_weak.wav'
 
-    if not os.path.exists(strong) or os.path.getsize(strong) < 1024:
-        cmd = [
-            'ffmpeg', '-nostdin', '-y',
-            '-f', 'lavfi', '-i', f'sine=frequency=1000:sample_rate={sr}:duration=0.045',
-            '-af', 'afade=t=out:st=0:d=0.045,volume=0.9',
+    # Runtime copies normalized to target sample-rate
+    strong = f"/tmp/trackbot_click_asset_strong_{sr}.wav"
+    weak = f"/tmp/trackbot_click_asset_weak_{sr}.wav"
+
+    if src_strong.exists() and (not os.path.exists(strong) or os.path.getsize(strong) < 1024):
+        subprocess.run([
+            'ffmpeg', '-nostdin', '-y', '-i', str(src_strong),
             '-ac', '1', '-ar', str(sr), '-c:a', 'pcm_s16le', strong
-        ]
-        subprocess.run(cmd, capture_output=True, text=True)
+        ], capture_output=True, text=True)
 
-    if not os.path.exists(weak) or os.path.getsize(weak) < 1024:
-        cmd = [
-            'ffmpeg', '-nostdin', '-y',
-            '-i', strong,
-            '-af', 'volume=0.45',
+    if src_weak.exists() and (not os.path.exists(weak) or os.path.getsize(weak) < 1024):
+        subprocess.run([
+            'ffmpeg', '-nostdin', '-y', '-i', str(src_weak),
             '-ac', '1', '-ar', str(sr), '-c:a', 'pcm_s16le', weak
-        ]
-        subprocess.run(cmd, capture_output=True, text=True)
+        ], capture_output=True, text=True)
 
     return strong, weak
 
@@ -334,7 +333,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v4_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v5_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
