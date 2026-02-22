@@ -192,9 +192,9 @@ def _accent_for_beat(idx: int, num: int, den: int) -> float:
     if (num, den) == (2,4):
         return 0.58
     if (num, den) == (6,8):
-        return 0.72 if idx == 3 else 0.48
+        return 0.66 if idx == 1 else 1.00 if idx==0 else 0.50
     if (num, den) == (12,8):
-        return 0.72 if idx in (3,6,9) else 0.45
+        return 0.70 if idx in (1,2,3) else 1.00
     return 0.55
 
 
@@ -205,25 +205,37 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
     """
     num, den = _parse_time_signature(signature)
     frames = int(seconds * sr)
-    click_len = int(0.11 * sr)  # 110ms
+    click_len = int(0.07 * sr)  # 70ms
     amp = max(0.0, min(1.5, float(volume)))
 
-    # treat BPM as quarter-note tempo; convert to beat unit (denominator)
-    beat_seconds = (60.0 / max(1, bpm)) * (4.0 / float(den))
+    # Feel-based beat spacing:
+    # 2/4,3/4,4/4 -> quarter-note pulse at BPM
+    # 6/8 -> 2 beats/bar (dotted-quarter pulse)
+    # 12/8 -> 4 beats/bar (dotted-quarter pulse)
+    if (num, den) == (6, 8):
+        beats_per_bar = 2
+        beat_seconds = 60.0 / max(1, bpm)
+    elif (num, den) == (12, 8):
+        beats_per_bar = 4
+        beat_seconds = 60.0 / max(1, bpm)
+    else:
+        beats_per_bar = num
+        beat_seconds = 60.0 / max(1, bpm)
+
     beat_samples = max(1, int(round(beat_seconds * sr)))
 
     buf = bytearray()
     for i in range(frames):
         beat_pos = i % beat_samples
-        beat_idx = (i // beat_samples) % num
+        beat_idx = (i // beat_samples) % beats_per_bar
         if beat_pos < click_len:
             x = beat_pos
             env = math.exp(-7.0 * (x / click_len))
             accent = _accent_for_beat(int(beat_idx), num, den)
-            f0 = 72.0 if beat_idx == 0 else 55.0
-            sample = (amp * accent) * env * (
-                0.90 * math.sin(2 * math.pi * f0 * (x / sr)) +
-                0.25 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
+            f0 = 90.0 if beat_idx == 0 else 65.0
+            sample = (amp * accent * 0.72) * env * (
+                1.00 * math.sin(2 * math.pi * f0 * (x / sr)) +
+                0.08 * math.sin(2 * math.pi * (2.0 * f0) * (x / sr))
             )
         else:
             sample = 0.0

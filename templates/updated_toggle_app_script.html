@@ -511,11 +511,12 @@
             metroUpdateTimer = setTimeout(async () => {
                 const { bpm, vol, sig } = getMetronomeParams();
                 try {
-                    await apiFetch('/metronome/start', {
+                    const r = await apiFetch('/metronome/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ bpm, vol, sig })
                     });
+                    if (!r.ok) { console.warn('metronome update failed'); }
                 } catch (e) {}
             }, 200);
         }
@@ -525,21 +526,26 @@
             const isStarting = !metronomeRunning;
             setBusy(btn, true, isStarting ? 'Starting...' : 'Stopping...');
             try {
+                let res;
                 if (isStarting) {
                     const { bpm, vol, sig } = getMetronomeParams();
-                    await apiFetch('/metronome/start', {
+                    res = await apiFetch('/metronome/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ bpm, vol, sig })
                     });
                 } else {
-                    await apiFetch('/metronome/stop', { method: 'POST' });
+                    res = await apiFetch('/metronome/stop', { method: 'POST' });
                 }
-                metronomeRunning = isStarting;
-                btn.textContent = isStarting ? 'Stop' : 'Start';
-                btn.className = isStarting ? 'btn btn-danger' : 'btn btn-success';
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || data.ok === false) {
+                    console.warn('metronome toggle failed', data);
+                    alert('Metronome request failed: ' + (data.error || data.upstream?.error || res.statusText || 'unknown'));
+                }
             } finally {
                 setBusy(btn, false);
+                // authoritative UI from backend status
+                try { await refreshStatuses(); } catch (e) {}
             }
         }
 
