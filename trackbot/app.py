@@ -390,6 +390,39 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
 
     threading.Thread(target=_link_async, args=(my_seq,), daemon=True).start()
 
+    # Keepalive loop: if playback file reaches EOF, restart metronome automatically
+    # and keep it running until explicit stop.
+    def _keepalive(seq_token: int, launch_cmd: list[str], bpm_token: int):
+        while True:
+            time.sleep(0.4)
+            with metronome_lock:
+                if seq_token != metronome_seq:
+                    return
+                proc_now = metronome_proc
+                bpm_now = metronome_bpm
+            if bpm_now is None:
+                # explicit stop requested
+                return
+            if proc_now and proc_now.poll() is None:
+                continue
+            # EOF or crash: relaunch same metronome process
+            try:
+                new_proc = subprocess.Popen(launch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=_pw_env())
+            except Exception:
+                with state['lock']:
+                    state['last_err'] = 'Metronome: relaunch failed.'
+                time.sleep(0.8)
+                continue
+            with metronome_lock:
+                if seq_token != metronome_seq or metronome_bpm is None:
+                    try: new_proc.terminate()
+                    except Exception: pass
+                    return
+                metronome_proc = new_proc
+            threading.Thread(target=_link_async, args=(seq_token,), daemon=True).start()
+
+    threading.Thread(target=_keepalive, args=(my_seq, cmd, bpm), daemon=True).start()
+
 def _ensure_metronome_debouncer():
     global metronome_debounce_thread
     if metronome_debounce_thread and metronome_debounce_thread.is_alive():
