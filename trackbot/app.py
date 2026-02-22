@@ -255,7 +255,7 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
     gain = max(0.0, min(1.0, float(volume)))
     def scale_pcm16(raw: bytes, factor: float) -> bytes:
         out = bytearray()
-        f = max(0.0, min(1.0, factor))
+        f = max(0.0, min(1.6, factor))
         for i in range(0, len(raw), 2):
             v = int.from_bytes(raw[i:i+2], 'little', signed=True)
             vv = int(max(-32768, min(32767, int(v * f))))
@@ -334,7 +334,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v9_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v10_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
