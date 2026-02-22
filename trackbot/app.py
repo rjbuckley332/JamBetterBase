@@ -178,34 +178,38 @@ def _parse_time_signature(sig: str) -> tuple[int, int]:
 
 
 def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4"):
-    """Generate metronome WAV using one stable (6/8-like) audio engine for all signatures.
+    """Sample-pattern metronome: assemble bars from strong/weak click samples.
 
-    Only accent schedule changes by signature.
+    This avoids per-signature synthesis changes; only pattern changes.
     """
     num, den = _parse_time_signature(signature)
     amp = max(0.0, min(1.0, float(volume)))
 
-    # 6/8-base timing engine: quarter-note pulse at BPM (known-clean path)
-    beat_seconds = 60.0 / max(1, bpm)
-    beat_samples = max(1, int(round(beat_seconds * sr)))
-    click_len = min(int(0.12 * sr), beat_samples)
+    # BPM treated as quarter-note pulse.
+    quarter_sec = 60.0 / max(1, bpm)
+    unit_sec = quarter_sec if den == 4 else (quarter_sec / 2.0)  # eighth-note units for x/8
+    unit_samples = max(1, int(round(unit_sec * sr)))
 
-    # Measure grouping only (sound engine unchanged)
-    if (num, den) == (6, 8):
-        beats_per_bar = 2
+    # Pattern in denominator units (4->quarters, 8->eighths)
+    if (num, den) == (2, 4):
+        pattern = ['S', 'W']
+    elif (num, den) == (3, 4):
+        pattern = ['S', 'W', 'W']
+    elif (num, den) == (4, 4):
+        pattern = ['S', 'W', 'W', 'W']
+    elif (num, den) == (6, 8):
+        pattern = ['S', 'W', 'W', 'S', 'W', 'W']
     elif (num, den) == (12, 8):
-        beats_per_bar = 4
+        pattern = ['S', 'W', 'W', 'S', 'W', 'W', 'S', 'W', 'W', 'S', 'W', 'W']
     else:
-        beats_per_bar = num
+        pattern = ['S', 'W', 'W', 'W']
 
-    total_beats = max(1, int(round(seconds / beat_seconds)))
+    click_len = min(int(0.10 * sr), unit_samples)
 
-    # One stable timbre for all signatures
-    f0 = 55.0
-
-    def build_click(accent: float) -> bytes:
+    def make_click(level: float) -> bytes:
         out = bytearray()
-        scale = amp * accent
+        f0 = 55.0
+        scale = amp * level
         for x in range(click_len):
             env = math.exp(-7.0 * (x / click_len))
             sample = scale * env * (
@@ -216,15 +220,26 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
             out += int(v).to_bytes(2, 'little', signed=True)
         return bytes(out)
 
-    click_down = build_click(1.00)
-    click_other = build_click(0.42)
-    silence = b'\x00\x00' * (beat_samples - click_len)
+    strong = make_click(1.00)
+    weak = make_click(0.45)
+    silence = b'\x00\x00' * (unit_samples - click_len)
+
+    pattern_bytes = bytearray()
+    for sym in pattern:
+        pattern_bytes += (strong if sym == 'S' else weak)
+        pattern_bytes += silence
+
+    # Repeat full bars to fill requested duration.
+    bar_samples = unit_samples * len(pattern)
+    total_samples = int(max(1, seconds) * sr)
+    bars = max(1, (total_samples + bar_samples - 1) // bar_samples)
 
     buf = bytearray()
-    for b in range(total_beats):
-        beat_idx = b % beats_per_bar
-        buf += click_down if beat_idx == 0 else click_other
-        buf += silence
+    for _ in range(bars):
+        buf += pattern_bytes
+
+    # Trim to exact duration
+    buf = buf[: total_samples * 2]
 
     with wave.open(wav_path, 'wb') as w:
         w.setnchannels(1)
@@ -277,7 +292,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v2_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v3_{bpm}_{sig_key}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
             _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
