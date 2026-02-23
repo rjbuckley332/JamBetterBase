@@ -62,3 +62,12 @@ Create/update customer record:
 
 - Last argument (`false`) means **DNS only** (recommended until cert is stable).
 - Use `true` only when you intentionally want Cloudflare proxy.
+
+## DNS is now required in rollout
+
+ now performs Cloudflare DNS upsert for each server before deploy.
+Set these env vars in the shell running rollout:
+
+
+
+Inventory may optionally include ; otherwise  is used as DNS target.

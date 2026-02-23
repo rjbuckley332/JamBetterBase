@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, subprocess, sys, time, urllib.request
+import json, subprocess, sys, time, urllib.request, urllib.parse, socket, os
 
 if len(sys.argv) < 2:
     raise SystemExit("Usage: canary_rollout.py <git-tag> [inventory] [batch_size] [dry_run:0|1]")
@@ -26,6 +26,51 @@ def run(cmd):
     if dry_run:
         return 0
     return subprocess.run(cmd, shell=True).returncode
+
+
+def ensure_dns(s):
+    """Require Cloudflare DNS upsert for server before deploy."""
+    token = os.getenv('CF_API_TOKEN', '').strip()
+    zone_id = os.getenv('CF_ZONE_ID', '').strip()
+    zone_name = os.getenv('CF_ZONE_NAME', '').strip() or 'jambetter.music'
+    if not token or not zone_id:
+        raise RuntimeError('Missing CF_API_TOKEN/CF_ZONE_ID env vars for DNS upsert')
+
+    health_url = s.get('health_url', '')
+    host = ''
+    try:
+        host = urllib.parse.urlparse(health_url).hostname or ''
+    except Exception:
+        host = ''
+    if not host:
+        # fallback from name/id
+        host = f"{s.get('name') or s.get('id')}.{zone_name}"
+
+    # only manage our zone
+    if not host.endswith('.' + zone_name) and host != zone_name:
+        raise RuntimeError(f'Health host {host} not in zone {zone_name}')
+
+    # label for upsert script
+    label = '@' if host == zone_name else host[:-len('.' + zone_name)]
+
+    target = s.get('dns_target_ip') or s.get('ssh_host') or ''
+    if not target:
+        raise RuntimeError(f'Missing ssh_host/dns_target_ip for {s.get("name", s.get("id"))}')
+    # resolve hostname target to IPv4 if needed
+    try:
+        if not all(ch.isdigit() or ch == '.' for ch in str(target)):
+            target = socket.gethostbyname(str(target))
+    except Exception as e:
+        raise RuntimeError(f'Failed resolving dns target {target}: {e}')
+
+    cmd = f"/home/nds/deploy/cloudflare_dns_upsert.py {label} {target} false"
+    print('  DNS upsert:', cmd)
+    if dry_run:
+        return True
+    env = os.environ.copy()
+    env['CF_ZONE_NAME'] = zone_name
+    p = subprocess.run(cmd, shell=True, env=env)
+    return p.returncode == 0
 
 
 def deploy_one(s):
