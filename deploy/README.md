@@ -43,3 +43,22 @@ Behavior:
 2. Health-gate canary
 3. Roll out remaining servers in batches
 4. Stop immediately on failure
+
+## Cloudflare DNS upsert (required for new customer provisioning)
+
+Set env on central ops server:
+
+```bash
+export CF_API_TOKEN="<token-with-DNS-edit-permission>"
+export CF_ZONE_ID="<cloudflare-zone-id-for-jambetter.music>"
+export CF_ZONE_NAME="jambetter.music"
+```
+
+Create/update customer record:
+
+```bash
+/home/nds/deploy/cloudflare_dns_upsert.py boysgetold 203.0.113.10 false
+```
+
+- Last argument (`false`) means **DNS only** (recommended until cert is stable).
+- Use `true` only when you intentionally want Cloudflare proxy.
