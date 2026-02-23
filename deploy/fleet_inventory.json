@@ -1,0 +1,20 @@
+{
+  "repo": "/home/nds",
+  "services": [
+    "jamulus-headless.service",
+    "trackbot-web.service",
+    "jamulus-toggle-webapp.service",
+    "jamulus-uploader.service"
+  ],
+  "servers": [
+    {
+      "id": "pipedreamers",
+      "name": "pipedreamers",
+      "ssh_host": "13.221.152.126",
+      "ssh_user": "ubuntu",
+      "health_url": "https://pipedreamers.jambetter.music/ops/health",
+      "ops_token": "",
+      "canary": true
+    }
+  ]
+}
