@@ -28,6 +28,18 @@ def die(msg):
     sys.exit(1)
 
 
+def resolve_zone_id(token: str, zone_name: str) -> str:
+    """Lookup zone id by zone name when CF_ZONE_ID is not provided."""
+    path = f"/zones?name={urllib.parse.quote(zone_name)}&status=active&per_page=1"
+    out = req("GET", path, token)
+    if not out.get("success"):
+        return ""
+    result = out.get("result") or []
+    if not result:
+        return ""
+    return (result[0] or {}).get("id", "")
+
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: cloudflare_dns_upsert.py <host-label|fqdn> <ipv4> [proxied:true|false]")
@@ -44,7 +56,9 @@ def main():
     if not token:
         die("CF_API_TOKEN is required")
     if not zone_id:
-        die("CF_ZONE_ID is required")
+        zone_id = resolve_zone_id(token, zone_name)
+        if not zone_id:
+            die("CF_ZONE_ID missing and auto-discovery failed. Set CF_ZONE_ID or grant Zone:Read for zone lookup.")
 
     # normalize name
     if name_in.endswith("." + zone_name) or name_in == zone_name:
