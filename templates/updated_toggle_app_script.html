@@ -163,6 +163,7 @@
         .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         
         .file-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+        .icon-btn { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items:center; justify-content:center; font-size: 17px; line-height: 1; }
         
         .browser-header {
             display: flex;
@@ -262,6 +263,7 @@
         @media (max-width: 768px) {
             .file-actions { width: 100%; justify-content: flex-start; }
             .file-actions .btn { font-size: 14px; padding: 8px 10px; }
+            .icon-btn { width: 38px; height: 38px; font-size: 19px; }
             .metro-row { flex-direction: column; align-items: stretch; gap: 6px; }
             .metro-row label { min-width: 0; }
             #metroSig { width: 100%; font-size: 18px; padding: 10px; }
@@ -847,8 +849,8 @@
 
                         // iPhone-friendly play button (inline stream)
                         const playBtn = document.createElement('a');
-                        playBtn.className = 'btn btn-sm btn-info';
-                        playBtn.textContent = '▶︎ Play';
+                        playBtn.className = 'btn btn-sm btn-info icon-btn';
+                        playBtn.textContent = '▶︎';
                         playBtn.title = 'Play';
                         playBtn.href = '/wav/stream?file=' + encodeURIComponent(wavCurrentPath + f.name);
                         playBtn.target = '_blank';
@@ -858,17 +860,49 @@
 
                     // Download button (all file types)
                     const dlBtn = document.createElement('a');
-                    dlBtn.className = 'btn btn-sm btn-info';
-                    dlBtn.textContent = 'Download';
+                    dlBtn.className = 'btn btn-sm btn-info icon-btn';
+                    dlBtn.textContent = '⬇︎';
                     dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
                     dlBtn.download = f.name;
+                    dlBtn.title = 'Download';
                     actions.appendChild(dlBtn);
+
+                    const shareBtn = document.createElement('button');
+                    shareBtn.type = 'button';
+                    shareBtn.className = 'btn btn-sm btn-info icon-btn';
+                    shareBtn.textContent = '⤴︎';
+                    shareBtn.title = 'Share';
+                    shareBtn.onclick = () => shareFile(wavCurrentPath + f.name, f.name);
+                    actions.appendChild(shareBtn);
                     
                     row.appendChild(actions);
                     filesDiv.appendChild(row);
                 });
             } catch (e) {
                 console.error('wavRefresh error', e);
+            }
+        }
+
+
+        async function shareFile(filePath, fileName) {
+            const streamUrl = window.location.origin + '/wav/stream?file=' + encodeURIComponent(filePath);
+            try {
+                if (navigator.share) {
+                    await navigator.share({
+                        title: fileName || 'Audio file',
+                        text: 'Listen to this recording',
+                        url: streamUrl
+                    });
+                    return;
+                }
+            } catch (e) {
+                // user cancelled or share failed; fallback below
+            }
+            try {
+                await navigator.clipboard.writeText(streamUrl);
+                alert('Share link copied to clipboard.');
+            } catch (e) {
+                window.prompt('Copy this link:', streamUrl);
             }
         }
 
