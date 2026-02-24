@@ -14,7 +14,23 @@
       "ssh_user": "ubuntu",
       "health_url": "https://pipedreamers.jambetter.music/ops/health",
       "ops_token": "",
-      "canary": true
+      "canary": true,
+      "fqdn": "pipedreamers.jambetter.music",
+      "app_port": 5000
+    },
+    {
+      "id": "boysgetold",
+      "name": "boysgetold",
+      "ssh_host": "34.198.8.137",
+      "ssh_user": "ubuntu",
+      "fqdn": "boysgetold.jambetter.music",
+      "health_url": "https://boysgetold.jambetter.music/ops/health",
+      "ops_token": "",
+      "canary": false,
+      "app_port": 5000,
+      "s3_bucket": "boysgetold-recordings-prod",
+      "s3_region": "us-east-2",
+      "s3_prefix": "vps/vps-0001"
     }
   ]
 }
