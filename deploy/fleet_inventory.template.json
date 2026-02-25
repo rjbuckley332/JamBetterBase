@@ -1,0 +1,50 @@
+{
+  "repo": "/home/nds",
+  "services": [
+    "jamulus-headless.service",
+    "trackbot-web.service",
+    "jamulus-toggle-webapp.service",
+    "jamulus-uploader.service"
+  ],
+  "defaults": {
+    "ssh_user": "ubuntu",
+    "app_port": 5000,
+    "ops_token": "",
+    "health_timeout_seconds": 8,
+    "dns_proxied": false,
+    "s3_region": "us-east-2",
+    "s3_prefix": "vps/vps-0001"
+  },
+  "servers": [
+    {
+      "id": "pipedreamers",
+      "name": "pipedreamers",
+      "canary": true,
+      "ssh_host": "13.221.152.126",
+      "static_ip_name": "pipedreamers-ip",
+      "fqdn": "pipedreamers.jambetter.music",
+      "health_url": "https://pipedreamers.jambetter.music/ops/health",
+      "s3_bucket": "pipedreamers-recordings-prod",
+      "trackbot_rclone_remote": "s3pd:pipedreamers-recordings-prod/vps/vps-0001",
+      "env_overrides": {
+        "LIBRARY_S3_BUCKET": "pipedreamers-recordings-prod",
+        "LIBRARY_VPS_ID": "vps-0001"
+      }
+    },
+    {
+      "id": "example-customer",
+      "name": "example-customer",
+      "canary": false,
+      "ssh_host": "REPLACE_WITH_INSTANCE_IP",
+      "static_ip_name": "example-customer-ip",
+      "fqdn": "example-customer.jambetter.music",
+      "health_url": "https://example-customer.jambetter.music/ops/health",
+      "s3_bucket": "example-customer-recordings-prod",
+      "trackbot_rclone_remote": "s3pd:example-customer-recordings-prod/vps/vps-0001",
+      "env_overrides": {
+        "LIBRARY_S3_BUCKET": "example-customer-recordings-prod",
+        "LIBRARY_VPS_ID": "vps-0001"
+      }
+    }
+  ]
+}
