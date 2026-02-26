@@ -56,6 +56,11 @@ Caddy is used as the reverse proxy, configured in `config/caddy/Caddyfile`.
 - AWS credentials in `.aws/` (not tracked)
 - Service-specific config may be in individual files
 
+## Documentation
+
+- Fleet blueprint: `docs/FLEET-V1-BLUEPRINT.md`
+- Support bot playbook: `docs/SUPPORT_PLAYBOOK.md`
+
 ## License
 
 Private - PipeDreamers Project
