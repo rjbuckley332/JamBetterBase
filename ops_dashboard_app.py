@@ -16,6 +16,7 @@ Auth:
   - supply as ?token=... or X-Ops-Token header
 """
 
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -408,10 +409,14 @@ def _pins_write(pins: list[dict]) -> None:
 
 
 def _pin_sort_key(p: dict) -> tuple:
-    # pinned first, newest first
+    """Sort pins pinned-first then newest-first.
+
+    created_at is expected to be an ISO-8601 UTC string (lexicographically sortable).
+    """
     pinned = bool(p.get("pinned"))
-    created = p.get("created_at") or ""
-    return (0 if pinned else 1, "" if not created else "".join(reversed(created)))
+    created = (p.get("created_at") or "")
+    # We'll sort with reverse=True so True (pinned) comes first, then newest created_at.
+    return (pinned, "" if not created else created)
 
 
 @app.route("/")
@@ -454,13 +459,26 @@ def api_fleet():
         return (jsonify({"ok": False, "error": "unauthorized"}), 401)
 
     servers = _load_servers()
-    out = []
+
+    # Poll in parallel to keep UI snappy as fleet size grows.
+    out: list[dict] = []
+    if servers:
+        max_workers = min(16, max(1, len(servers)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futs = [ex.submit(_poll_server, e) for e in servers]
+            for f in concurrent.futures.as_completed(futs):
+                try:
+                    out.append(f.result())
+                except Exception as e:
+                    out.append({"ok": False, "error": str(e)})
+
+        # Preserve inventory order (nice for operators).
+        by_id = {r.get("id"): r for r in out if isinstance(r, dict)}
+        out = [by_id.get(e.get("id")) or {"id": e.get("id"), "name": e.get("name"), "ok": False, "error": "poll failed"} for e in servers]
+
     alerts = 0
     reachable = 0
-
-    for e in servers:
-        row = _poll_server(e)
-        out.append(row)
+    for row in out:
         if row.get("ok"):
             reachable += 1
             q = ((row.get("data") or {}).get("quality") or {}).get("grade")
@@ -527,8 +545,7 @@ def api_pins():
     if request.method == "GET":
         pins = _pins_read().get("pins") or []
         # pinned first, newest first
-        pins_sorted = sorted(pins, key=lambda p: (p.get("created_at") or ""), reverse=True)
-        pins_sorted = sorted(pins_sorted, key=lambda p: bool(p.get("pinned")), reverse=True)
+        pins_sorted = sorted(pins, key=_pin_sort_key, reverse=True)
         return jsonify({"ok": True, "ts": _utc_ts(), "pins": pins_sorted})
 
     d = request.get_json(silent=True) or {}

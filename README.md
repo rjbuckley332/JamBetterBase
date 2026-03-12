@@ -19,6 +19,7 @@ This server provides:
 | Component | File | Purpose |
 |-----------|------|---------|
 | Web Control | `toggle_app.py` | Main Flask web app for server control |
+| Unified Ops Dashboard | `ops_dashboard_app.py` | Fleet status + start/stop controls + operator pins |
 | Track Player | `trackbot/app.py` | Playback system for backing tracks |
 | UI Template | `templates/updated_toggle_app_script.html` | Web interface |
 | Uploader | `jamulus_uploader.py` | S3 upload functionality |
@@ -59,6 +60,7 @@ Caddy is used as the reverse proxy, configured in `config/caddy/Caddyfile`.
 ## Documentation
 
 - Fleet blueprint: `docs/FLEET-V1-BLUEPRINT.md`
+- Ops dashboard: `docs/OPS_DASHBOARD.md`
 - Support bot playbook: `docs/SUPPORT_PLAYBOOK.md`
 
 ## License
