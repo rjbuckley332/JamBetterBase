@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template, make_response, session, redirect, send_file
-import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile
+import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile, shutil
 import boto3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -697,23 +697,45 @@ def _support_status_payload() -> dict:
         grade = 'red'
         label = 'Overloaded'
 
+    load = {
+        'load1': round(float(l1), 2),
+        'load5': round(float(l5), 2),
+        'load15': round(float(l15), 2),
+        'cores': int(cores),
+        'load_ratio': round(load_ratio, 2),
+    }
+
+    # Disk snapshot for ops dashboards (root filesystem by default)
+    disk = {}
+    try:
+        du = shutil.disk_usage('/')
+        used_pct = (float(du.used) / float(max(1, du.total))) * 100.0
+        disk = {
+            'path': '/',
+            'used_pct': round(used_pct, 1),
+            'used_gb': round(float(du.used) / (1024**3), 2),
+            'free_gb': round(float(du.free) / (1024**3), 2),
+            'total_gb': round(float(du.total) / (1024**3), 2),
+        }
+    except Exception:
+        disk = {'path': '/', 'error': 'disk_usage_failed'}
+
     quality = {
         'grade': grade,
         'label': label,
-        'load1': round(float(l1), 2),
-        'load5': round(float(l5), 2),
-        'cores': int(cores),
-        'load_ratio': round(load_ratio, 2),
-        'note': 'Server-side health only; user network/device quality may still vary.'
+        'note': 'Server-side infrastructure health only; user network/device quality may still vary.',
     }
 
     return {
         'ok': True,
+        'ts': _now_local().isoformat(),
         'server_id': LIBRARY_VPS_ID,
         'jamulus_running': jamulus_running,
         'recording_state': 'ON' if enabled else 'OFF',
         'status_text': 'Online' if jamulus_running else 'Offline',
         'quality': quality,
+        'load': load,
+        'disk': disk,
     }
 
 

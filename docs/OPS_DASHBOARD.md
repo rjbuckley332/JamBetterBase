@@ -64,6 +64,17 @@ Notes:
   - `/status`
   - `/` (last resort)
 
+Expected JSON shape (minimum) from a server status endpoint:
+```json
+{
+  "ok": true,
+  "server_id": "vps-0001",
+  "quality": {"grade": "green|yellow|red", "label": "..."},
+  "load": {"load1": 0.12, "cores": 2},
+  "disk": {"used_pct": 17.3}
+}
+```
+
 ### Pins storage
 
 Pins are file-backed (JSON) for now.
