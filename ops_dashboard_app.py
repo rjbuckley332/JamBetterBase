@@ -120,6 +120,11 @@ textarea{min-height:90px}
 <script>
 function b(g,l){const c=g==='green'?'green':(g==='yellow'?'yellow':(g==='red'?'red':'gray'));return `<span class='badge ${c}'>${l}</span>`}
 
+const OPS_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+function authHeaders(){
+  return OPS_TOKEN ? {'X-Ops-Token': OPS_TOKEN} : {};
+}
+
 function setTab(tabId){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tabId));
   ['fleetTab','pinsTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
@@ -128,7 +133,7 @@ function setTab(tabId){
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>setTab(t.dataset.tab)));
 
 async function loadFleet(){
-  const r=await fetch('/api/fleet');
+  const r=await fetch('/api/fleet', {headers: authHeaders()});
   const d=await r.json();
   const s=d.summary||{};
   document.getElementById('top').innerHTML = `
@@ -141,13 +146,21 @@ async function loadFleet(){
     const name = x.name || x.id || 'unknown';
     const sid = x.id || '';
     if(!x.ok){
-      return `<tr><td>${name}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`<button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>`:''}</td></tr>`;
+      return `<tr><td>${name}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
+        <button class='btn' onclick='serverAction("${sid}","start")'>Start</button>
+        <button class='btn danger' onclick='serverAction("${sid}","stop")'>Stop</button>
+        <button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>
+      `:''}</td></tr>`;
     }
     const q=(x.data.quality||{});
     const L=(x.data.load||{});
     const D=(x.data.disk||{});
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${name}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td>${reach}</td><td>${sid?`<button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>`:''}</td></tr>`;
+    return `<tr><td>${name}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td>${reach}</td><td>${sid?`
+      <button class='btn' onclick='serverAction("${sid}","start")'>Start</button>
+      <button class='btn danger' onclick='serverAction("${sid}","stop")'>Stop</button>
+      <button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>
+    `:''}</td></tr>`;
   }).join('') || '<tr><td colspan="6">No servers configured</td></tr>';
 
   document.getElementById('fleet').innerHTML = rows;
@@ -159,7 +172,7 @@ async function serverAction(serverId, action){
   if(!confirm(`Send ${action} to ${serverId}?`)) return;
   const r = await fetch(`/api/server/${encodeURIComponent(serverId)}/action`, {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{...authHeaders(), 'Content-Type':'application/json'},
     body: JSON.stringify({action})
   });
   const d = await r.json().catch(()=>({ok:false,error:'bad json'}));
@@ -172,7 +185,7 @@ async function serverAction(serverId, action){
 }
 
 async function loadPins(){
-  const r=await fetch('/api/pins');
+  const r=await fetch('/api/pins', {headers: authHeaders()});
   const d=await r.json();
   const items = (d.pins||[]);
   const html = items.map(p=>{
@@ -198,7 +211,7 @@ async function createPin(){
   const title = document.getElementById('pinTitle').value.trim();
   const body = document.getElementById('pinBody').value.trim();
   if(!title && !body){ alert('Add a title or body'); return; }
-  const r = await fetch('/api/pins', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title, body})});
+  const r = await fetch('/api/pins', {method:'POST', headers:{...authHeaders(), 'Content-Type':'application/json'}, body: JSON.stringify({title, body})});
   const d = await r.json().catch(()=>({ok:false}));
   if(!r.ok || !d.ok){ alert('Create failed: '+(d.error||r.status)); return; }
   document.getElementById('pinTitle').value='';
@@ -207,7 +220,7 @@ async function createPin(){
 }
 
 async function pinToggle(id, pinned){
-  const r = await fetch(`/api/pins/${encodeURIComponent(id)}/pin`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pinned})});
+  const r = await fetch(`/api/pins/${encodeURIComponent(id)}/pin`, {method:'POST', headers:{...authHeaders(), 'Content-Type':'application/json'}, body: JSON.stringify({pinned})});
   const d = await r.json().catch(()=>({ok:false}));
   if(!r.ok || !d.ok){ alert('Pin failed: '+(d.error||r.status)); return; }
   await loadPins();
@@ -215,14 +228,14 @@ async function pinToggle(id, pinned){
 
 async function deletePin(id){
   if(!confirm('Delete pin?')) return;
-  const r = await fetch(`/api/pins/${encodeURIComponent(id)}`, {method:'DELETE'});
+  const r = await fetch(`/api/pins/${encodeURIComponent(id)}`, {method:'DELETE', headers: authHeaders()});
   const d = await r.json().catch(()=>({ok:false}));
   if(!r.ok || !d.ok){ alert('Delete failed: '+(d.error||r.status)); return; }
   await loadPins();
 }
 
 async function loadHealth(){
-  const r=await fetch('/health');
+  const r=await fetch('/health', {headers: authHeaders()});
   const d=await r.json();
   document.getElementById('healthOut').textContent = JSON.stringify(d, null, 2);
 }
@@ -514,12 +527,8 @@ def api_pins():
     if request.method == "GET":
         pins = _pins_read().get("pins") or []
         # pinned first, newest first
-        def sort_key(p: dict):
-            pinned = bool(p.get("pinned"))
-            created = p.get("created_at") or ""
-            return (0 if pinned else 1, created)
-
-        pins_sorted = sorted(pins, key=sort_key, reverse=True)
+        pins_sorted = sorted(pins, key=lambda p: (p.get("created_at") or ""), reverse=True)
+        pins_sorted = sorted(pins_sorted, key=lambda p: bool(p.get("pinned")), reverse=True)
         return jsonify({"ok": True, "ts": _utc_ts(), "pins": pins_sorted})
 
     d = request.get_json(silent=True) or {}
