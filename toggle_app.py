@@ -876,6 +876,19 @@ def ops_health():
     return jsonify(_read_ops_health())
 
 
+@app.route('/ops/status', methods=['GET'])
+def ops_status():
+    """Alias for the stable ops polling schema.
+
+    Rationale: the unified fleet dashboard prefers /ops/status when available,
+    but older clients used /api/support/status.
+    """
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    return jsonify(_support_status_payload())
+
+
 @app.route('/ops')
 def ops_dashboard():
     ok, resp = _require_passcode()
