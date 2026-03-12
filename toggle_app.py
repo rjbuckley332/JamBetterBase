@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template, make_response, session, redirect, send_file
 import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile, shutil
+import fcntl
 import boto3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -665,16 +666,40 @@ def _run_healthcheck_now():
         pass
 
 def _support_status_payload() -> dict:
+    """Stable status schema for ops dashboard polling.
+
+    Back-compat: also includes a few legacy top-level keys used by older clients.
+    """
+    # Recorder state (JSON-RPC preferred)
     enabled = jamulus_recording_enabled()
     if enabled is None:
         enabled = _has_recent_recording_writes()
 
-    jamulus_running = False
+    # systemd service state (authoritative for start/stop)
+    svc_state = 'unknown'
+    svc_since = None
     try:
-        result = subprocess.run(['pgrep', '-x', 'jamulus'], capture_output=True)
-        jamulus_running = result.returncode == 0
+        p = subprocess.run(['systemctl', 'is-active', JAMULUS_SERVICE], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=4)
+        svc_state = (p.stdout or '').strip() or 'unknown'
     except Exception:
-        pass
+        svc_state = 'unknown'
+
+    try:
+        p = subprocess.run(['systemctl', 'show', JAMULUS_SERVICE, '-p', 'ActiveEnterTimestamp', '--value'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=4)
+        svc_since = (p.stdout or '').strip() or None
+    except Exception:
+        svc_since = None
+
+    # JSON-RPC reachability (best effort)
+    jsonrpc_reachable = False
+    try:
+        # if auth works, it's reachable
+        _ = jamulus_rpc_request('jamulusserver/getServerParameters')
+        jsonrpc_reachable = True
+    except Exception:
+        jsonrpc_reachable = False
+
+    jamulus_running = (svc_state == 'active')
 
     # Lightweight server-side quality indicators (infrastructure health only)
     try:
@@ -686,7 +711,7 @@ def _support_status_payload() -> dict:
 
     if not jamulus_running:
         grade = 'red'
-        label = 'Server issue'
+        label = 'Service down'
     elif load_ratio < 0.70:
         grade = 'green'
         label = 'Good'
@@ -706,7 +731,6 @@ def _support_status_payload() -> dict:
     }
 
     # Disk snapshot for ops dashboards (root filesystem by default)
-    disk = {}
     try:
         du = shutil.disk_usage('/')
         used_pct = (float(du.used) / float(max(1, du.total))) * 100.0
@@ -726,17 +750,32 @@ def _support_status_payload() -> dict:
         'note': 'Server-side infrastructure health only; user network/device quality may still vary.',
     }
 
-    return {
+    utc_ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    # Stable schema (M1)
+    payload = {
         'ok': True,
-        'ts': _now_local().isoformat(),
+        'schema_version': 1,
         'server_id': LIBRARY_VPS_ID,
-        'jamulus_running': jamulus_running,
-        'recording_state': 'ON' if enabled else 'OFF',
-        'status_text': 'Online' if jamulus_running else 'Offline',
+        'zone': SERVER_ZONE,
+        'ts': utc_ts,
+        'jamulus': {
+            'service': {'state': svc_state, 'since': svc_since},
+            'jsonrpc': {'reachable': bool(jsonrpc_reachable), 'port': int(JSONRPC_PORT)},
+            'recorder': {'recording': bool(enabled)},
+        },
         'quality': quality,
         'load': load,
         'disk': disk,
+
+        # legacy fields (keep for existing clients)
+        'jamulus_running': jamulus_running,
+        'recording_state': 'ON' if enabled else 'OFF',
+        'status_text': 'Online' if jamulus_running else 'Offline',
     }
+
+    return payload
+
 
 
 def _support_reply(intent: str, text: str = '') -> dict:
@@ -1197,6 +1236,13 @@ def get_lock_status():
 # ---------- OPS: Jamulus service controls (Fleet dashboard) ----------
 JAMULUS_SERVICE = os.getenv('JAMULUS_SERVICE', 'jamulus-headless.service')
 
+# Idempotent action journal/lock (M2 control-plane)
+JAMULUS_ACTION_LOCK = os.getenv('JAMULUS_ACTION_LOCK', '/tmp/jambetter_jamulus_action.lock')
+JAMULUS_ACTION_JOURNAL = os.getenv('JAMULUS_ACTION_JOURNAL', '/tmp/jambetter_actions.jsonl')
+JAMULUS_ACTION_TIMEOUT_S = float(os.getenv('JAMULUS_ACTION_TIMEOUT_S', '25'))
+SERVER_ZONE = os.getenv('JAMBETTER_ZONE', os.getenv('SERVER_ZONE', 'home')).strip() or 'home'
+
+
 
 def _systemctl(action: str) -> tuple[int, str]:
     """Run systemctl via sudo (non-interactive)."""
@@ -1216,14 +1262,146 @@ def _systemctl(action: str) -> tuple[int, str]:
         return 1, str(e)
 
 
+
+
+def _jamulus_action_read_journal() -> list[dict]:
+    try:
+        p = Path(JAMULUS_ACTION_JOURNAL)
+        if not p.exists():
+            return []
+        rows = []
+        for ln in p.read_text(encoding='utf-8').splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                rows.append(json.loads(ln))
+            except Exception:
+                continue
+        return rows
+    except Exception:
+        return []
+
+
+def _jamulus_action_find(request_id: str) -> dict | None:
+    request_id = (request_id or '').strip()
+    if not request_id:
+        return None
+    found = None
+    for row in _jamulus_action_read_journal():
+        if row.get('request_id') == request_id:
+            found = row
+    return found
+
+
+def _jamulus_action_append(row: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(JAMULUS_ACTION_JOURNAL) or '/tmp', exist_ok=True)
+        with open(JAMULUS_ACTION_JOURNAL, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(row, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def _jamulus_action_lock():
+    os.makedirs(os.path.dirname(JAMULUS_ACTION_LOCK) or '/tmp', exist_ok=True)
+    f = open(JAMULUS_ACTION_LOCK, 'a+', encoding='utf-8')
+    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+    return f
+
+
+def _systemctl_is_active() -> str:
+    try:
+        p = subprocess.run(['systemctl', 'is-active', JAMULUS_SERVICE], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=4)
+        return (p.stdout or '').strip() or 'unknown'
+    except Exception:
+        return 'unknown'
+
+
+@app.route('/api/jamulus/action/<request_id>', methods=['GET'])
+def api_jamulus_action_status(request_id: str):
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    row = _jamulus_action_find(request_id)
+    if not row:
+        return jsonify({'ok': False, 'error': 'not found', 'request_id': request_id}), 404
+    return jsonify({'ok': True, **row})
+
 def _api_jamulus_action(action: str):
     ok, resp = _require_passcode()
     if not ok:
         return resp
-    rc, out = _systemctl(action)
-    if rc == 0:
-        return jsonify({'ok': True, 'action': action, 'service': JAMULUS_SERVICE, 'output': out})
-    return jsonify({'ok': False, 'action': action, 'service': JAMULUS_SERVICE, 'rc': rc, 'output': out}), 500
+
+    # Idempotency key: X-Request-Id header or JSON field.
+    d = request.get_json(silent=True) or {}
+    request_id = (request.headers.get('X-Request-Id') or d.get('request_id') or d.get('id') or '').strip() or uuidlib.uuid4().hex
+
+    action = (action or '').strip().lower()
+    if action not in ('start', 'stop', 'restart'):
+        return jsonify({'ok': False, 'error': 'invalid action'}), 400
+
+    # Fast path: if we've already done this request_id, return stored result.
+    prev = _jamulus_action_find(request_id)
+    if prev and prev.get('state') in ('done', 'failed'):
+        return jsonify({'ok': True, **prev})
+
+    # One action at a time per host.
+    lock_f = _jamulus_action_lock()
+    try:
+        # Re-check after acquiring lock (prevents duplicate runs).
+        prev = _jamulus_action_find(request_id)
+        if prev and prev.get('state') in ('done', 'failed'):
+            return jsonify({'ok': True, **prev})
+
+        start_ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        _jamulus_action_append({'request_id': request_id, 'action': action, 'state': 'in_progress', 'ts': start_ts})
+
+        # No-op semantics based on current state.
+        cur = _systemctl_is_active()
+        if action == 'start' and cur == 'active':
+            row = {'request_id': request_id, 'action': action, 'state': 'done', 'result': 'noop', 'details': 'already active', 'ts': start_ts}
+            _jamulus_action_append(row)
+            return jsonify({'ok': True, **row})
+        if action == 'stop' and cur in ('inactive', 'failed'):
+            row = {'request_id': request_id, 'action': action, 'state': 'done', 'result': 'noop', 'details': f'already {cur}', 'ts': start_ts}
+            _jamulus_action_append(row)
+            return jsonify({'ok': True, **row})
+
+        # Execute
+        rc, out = _systemctl(action)
+        done_ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        if rc == 0:
+            row = {
+                'request_id': request_id,
+                'action': action,
+                'state': 'done',
+                'result': 'done',
+                'service': JAMULUS_SERVICE,
+                'output': out,
+                'ts': done_ts,
+            }
+            _jamulus_action_append(row)
+            return jsonify({'ok': True, **row})
+
+        row = {
+            'request_id': request_id,
+            'action': action,
+            'state': 'failed',
+            'result': 'failed',
+            'service': JAMULUS_SERVICE,
+            'rc': rc,
+            'output': out,
+            'ts': done_ts,
+        }
+        _jamulus_action_append(row)
+        return jsonify({'ok': False, **row}), 500
+    finally:
+        try:
+            lock_f.close()
+        except Exception:
+            pass
+
 
 
 @app.route('/api/jamulus/start', methods=['POST'])

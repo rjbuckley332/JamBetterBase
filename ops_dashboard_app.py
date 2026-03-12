@@ -66,7 +66,7 @@ table{width:100%;border-collapse:collapse}
 .hidden{display:none}
 .btn{cursor:pointer;border:1px solid #2a3443;background:#0e1116;color:#e7ecf3;border-radius:10px;padding:6px 10px}
 .btn.danger{border-color:#6b2b2b}
-input,textarea{width:100%;border:1px solid #2a3443;border-radius:10px;background:#0e1116;color:#e7ecf3;padding:8px}
+input,textarea,select{width:100%;border:1px solid #2a3443;border-radius:10px;background:#0e1116;color:#e7ecf3;padding:8px}
 textarea{min-height:90px}
 </style></head><body>
 <h2>JamBetter Unified Ops Dashboard</h2>
@@ -79,6 +79,22 @@ textarea{min-height:90px}
 
 <div id='fleetTab'>
   <div class='row' id='top'></div>
+  <div class='card'>
+    <div style='display:flex; gap:12px; flex-wrap:wrap; align-items:center'>
+      <div>
+        <div class='small'>Zone filter</div>
+        <select id='zoneFilter' class='btn' style='padding:6px 10px'>
+          <option value='home'>home</option>
+          <option value='all'>all</option>
+        </select>
+      </div>
+      <label style='display:flex; gap:8px; align-items:center'>
+        <input type='checkbox' id='crossZoneCtrl' />
+        <span>Enable cross-zone control</span>
+      </label>
+      <div class='small'>When disabled, action buttons are disabled for servers outside your home zone.</div>
+    </div>
+  </div>
   <div class='card'>
     <table>
       <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Reachability</th><th>Actions</th></tr></thead>
@@ -122,8 +138,28 @@ textarea{min-height:90px}
 function b(g,l){const c=g==='green'?'green':(g==='yellow'?'yellow':(g==='red'?'red':'gray'));return `<span class='badge ${c}'>${l}</span>`}
 
 const OPS_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+const HOME_ZONE = 'home';
+const LS_ZONE = 'jambetter_zoneFilter';
+const LS_CROSS = 'jambetter_crossZoneControl';
+let inFlight = {};
+function newReqId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
 function authHeaders(){
   return OPS_TOKEN ? {'X-Ops-Token': OPS_TOKEN} : {};
+}
+
+
+function initZoneControls(){
+  const sel = document.getElementById('zoneFilter');
+  const cb = document.getElementById('crossZoneCtrl');
+  if(!sel || !cb) return;
+  sel.value = localStorage.getItem(LS_ZONE) || 'home';
+  cb.checked = (localStorage.getItem(LS_CROSS) || '0') === '1';
+  sel.addEventListener('change', ()=>{ localStorage.setItem(LS_ZONE, sel.value); loadFleet(); });
+  cb.addEventListener('change', ()=>{ localStorage.setItem(LS_CROSS, cb.checked ? '1':'0'); loadFleet(); });
 }
 
 function setTab(tabId){
@@ -143,15 +179,20 @@ async function loadFleet(){
     <div class='card'>Alerts<br><b>${s.alerts||0}</b></div>
   `;
 
-  const rows=(d.servers||[]).map(x=>{
+  const zoneFilter = (document.getElementById('zoneFilter')||{}).value || (localStorage.getItem(LS_ZONE) || 'home');
+  const crossEnabled = ((document.getElementById('crossZoneCtrl')||{}).checked) || ((localStorage.getItem(LS_CROSS) || '0')==='1');
+  const rows=(d.servers||[]).filter(x=>{
+    const z = x.zone || (x.inventory && x.inventory.zone) || 'home';
+    return zoneFilter==='all' || z===HOME_ZONE;
+  }).map(x=>{
     const name = x.name || x.id || 'unknown';
     const sid = x.id || '';
     const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
     if(!x.ok){
       return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
-        <button class='btn' onclick='serverAction("${sid}","start")'>Start</button>
-        <button class='btn danger' onclick='serverAction("${sid}","stop")'>Stop</button>
-        <button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>
+        <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
       `:''}</td></tr>`;
     }
     const q=(x.data.quality||{});
@@ -161,9 +202,9 @@ async function loadFleet(){
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
     return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td>${reach}</td><td>${sid?`
-      <button class='btn' onclick='serverAction("${sid}","start")'>Start</button>
-      <button class='btn danger' onclick='serverAction("${sid}","stop")'>Stop</button>
-      <button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>
+      <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
     `:''}</td></tr>`;
   }).join('') || '<tr><td colspan="8">No servers configured</td></tr>';
 
@@ -173,11 +214,15 @@ async function loadFleet(){
 
 async function serverAction(serverId, action){
   if(!serverId) return;
+  if(inFlight[serverId]) return;
   if(!confirm(`Send ${action} to ${serverId}?`)) return;
+  const request_id = newReqId();
+  inFlight[serverId] = {action, request_id, ts: Date.now()};
+  await loadFleet();
   const r = await fetch(`/api/server/${encodeURIComponent(serverId)}/action`, {
     method:'POST',
-    headers:{...authHeaders(), 'Content-Type':'application/json'},
-    body: JSON.stringify({action})
+    headers:{...authHeaders(), 'Content-Type':'application/json', 'X-Request-Id': request_id},
+    body: JSON.stringify({action, request_id})
   });
   const d = await r.json().catch(()=>({ok:false,error:'bad json'}));
   if(!r.ok || !d.ok){
@@ -185,6 +230,7 @@ async function serverAction(serverId, action){
   } else {
     alert('Action sent.');
   }
+  delete inFlight[serverId];
   await loadFleet();
 }
 
@@ -244,6 +290,7 @@ async function loadHealth(){
   document.getElementById('healthOut').textContent = JSON.stringify(d, null, 2);
 }
 
+initZoneControls();
 loadFleet();
 loadPins();
 setInterval(loadFleet, 15000);

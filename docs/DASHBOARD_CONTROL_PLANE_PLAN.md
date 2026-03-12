@@ -142,3 +142,58 @@ And expose:
 - No automated migration of recordings/library objects between servers/zones.
 - No central “master” that takes ownership of servers.
 - No cross-zone failover without explicit operator command + clear UI.
+
+---
+
+## Implementation notes (next practical steps)
+
+### Dashboard (M4) — home-zone-first UX (no forced cross-zone migration)
+
+**Goal:** make cross-zone control *hard to do accidentally*.
+
+Proposed minimal UI additions (fleet tab):
+- `HOME_ZONE` (env or constant; default `home`).
+- A filter dropdown: `Zone: [home] [all]` (default: home).
+- A checkbox toggle: `Enable cross-zone control` (default off).
+  - When off, action buttons are disabled for servers whose `zone != HOME_ZONE`.
+  - Still allow *visibility* across zones if operator explicitly selects `all`.
+
+Persistence:
+- Store operator choices in `localStorage` (`zoneFilter`, `crossZoneControlEnabled`).
+
+Server inventory contract (already supported in `_load_servers()`):
+- `ops_servers.json` entries include `zone` and optional `tags`.
+
+Acceptance criteria:
+- Fresh load shows only `zone=home` servers.
+- Switching to `all` shows other zones, but buttons are disabled until cross-zone control is enabled.
+
+### Control-plane (M2/M3) — reliability-safe start/stop/restart
+
+**Problem in current code:** server endpoints in `toggle_app.py` run `systemctl` directly and return success/failure, with no lock, no idempotency, and no action-in-flight model.
+
+**Minimal design (works with stdlib only):**
+
+1) Add a single action runner with:
+- `fcntl.flock()` on a lockfile, e.g. `/tmp/jambetter_jamulus_action.lock`.
+- Idempotency key: accept `X-Request-Id` header (or JSON `request_id`).
+- Journal file: append JSON lines to `/tmp/jambetter_actions.jsonl`.
+
+2) Add endpoints:
+- `POST /api/jamulus/<start|stop|restart>`
+  - request: `{ "request_id": "..." }` optional
+  - response: `{ ok, request_id, action, result: done|noop|accepted|failed, details, ts }`
+- `GET /api/jamulus/action/<request_id>`
+  - response includes `state: in_progress|done|failed` and `output`.
+
+3) Idempotency behavior:
+- If the same `request_id` is seen again, return the stored result without re-running.
+
+4) "Desired vs actual" (MVP):
+- For now, infer actual via `systemctl is-active` and treat desired == action target.
+- Later: expose `GET /api/jamulus/state` to simplify dashboard.
+
+Dashboard (M3) UX changes needed later:
+- Generate a UUID `request_id` per button press.
+- Disable buttons while awaiting completion; if result is `accepted`, display `pending` + allow manual refresh.
+
