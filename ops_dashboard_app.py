@@ -43,6 +43,7 @@ SERVERS_FILE = os.getenv(
 )
 
 PINS_FILE = os.getenv("OPS_PINS_FILE", "/tmp/jambetter_ops_pins.json")
+AUDIT_FILE = os.getenv("OPS_AUDIT_FILE", "/tmp/jambetter_ops_audit.jsonl")
 
 HTML = """
 <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -97,7 +98,7 @@ textarea{min-height:90px}
   </div>
   <div class='card'>
     <table>
-      <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Reachability</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Last seen</th><th>Reachability</th><th>Actions</th></tr></thead>
       <tbody id='fleet'></tbody>
     </table>
   </div>
@@ -189,7 +190,7 @@ async function loadFleet(){
     const sid = x.id || '';
     const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
     if(!x.ok){
-      return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
+      return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
         <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -198,15 +199,16 @@ async function loadFleet(){
     const q=(x.data.quality||{});
     const L=(x.data.load||{});
     const D=(x.data.disk||{});
+    const lastSeen = (x.data.ts || x.data.last_seen || x.data.timestamp || '') || '-';
     const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td>${reach}</td><td>${sid?`
+    return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${sid?`
       <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
     `:''}</td></tr>`;
-  }).join('') || '<tr><td colspan="8">No servers configured</td></tr>';
+  }).join('') || '<tr><td colspan="9">No servers configured</td></tr>';
 
   document.getElementById('fleet').innerHTML = rows;
   document.getElementById('stamp').textContent = 'Updated: ' + (d.ts || new Date().toISOString());
@@ -307,6 +309,16 @@ def _authorized() -> bool:
 
 def _utc_ts() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _audit_append(event: dict) -> None:
+    """Best-effort append-only audit log (JSONL)."""
+    try:
+        os.makedirs(os.path.dirname(AUDIT_FILE) or "/tmp", exist_ok=True)
+        with open(AUDIT_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 def _run_healthcheck() -> None:
@@ -586,6 +598,11 @@ def api_server_action(server_id: str):
     if action not in ("start", "stop", "restart"):
         return (jsonify({"ok": False, "error": "invalid action"}), 400)
 
+    request_id = (
+        (request.headers.get("X-Request-Id") or "").strip()
+        or (d.get("request_id") or d.get("requestId") or "").strip()
+    )
+
     base = (server.get("url") or "").rstrip("/")
     if not base:
         return (jsonify({"ok": False, "error": "missing server url"}), 400)
@@ -594,16 +611,40 @@ def api_server_action(server_id: str):
     # (Each JamBetter server should implement these. If not present, this will 404.)
     endpoint = f"{base}/api/jamulus/{action}"
 
-    headers = {}
+    headers: dict[str, str] = {}
     if server.get("token"):
         headers["X-Ops-Token"] = server["token"]
+    if request_id:
+        # Forward idempotency key / correlation id to the server.
+        headers["X-Request-Id"] = request_id
 
-    code, data = _http_json(endpoint, method="POST", headers=headers, payload={}, timeout=12.0)
-    if code and 200 <= code < 300 and isinstance(data, dict) and data.get("ok") is not False:
-        return jsonify({"ok": True, "server": server_id, "action": action, "upstream": data})
+    ts = _utc_ts()
+    code, data = _http_json(
+        endpoint,
+        method="POST",
+        headers=headers,
+        payload={"request_id": request_id} if request_id else {},
+        timeout=12.0,
+    )
+
+    ok = bool(code and 200 <= code < 300 and isinstance(data, dict) and data.get("ok") is not False)
+
+    _audit_append({
+        "ts": ts,
+        "server_id": server_id,
+        "server_name": server.get("name"),
+        "endpoint": endpoint,
+        "action": action,
+        "request_id": request_id,
+        "upstream_code": code,
+        "ok": ok,
+    })
+
+    if ok:
+        return jsonify({"ok": True, "ts": ts, "server": server_id, "action": action, "request_id": request_id, "upstream": data})
 
     return (
-        jsonify({"ok": False, "error": "upstream failed", "upstream_code": code, "upstream": data}),
+        jsonify({"ok": False, "ts": ts, "error": "upstream failed", "request_id": request_id, "upstream_code": code, "upstream": data}),
         502,
     )
 

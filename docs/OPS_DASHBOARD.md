@@ -88,6 +88,12 @@ Pins are file-backed (JSON) for now.
 
 - `OPS_PINS_FILE=/tmp/jambetter_ops_pins.json` (default)
 
+### Audit log
+
+Action proxy calls (start/stop/restart) are logged best-effort to a local append-only JSONL file.
+
+- `OPS_AUDIT_FILE=/tmp/jambetter_ops_audit.jsonl` (default)
+
 ### Health check
 
 - `JAMBETTER_HEALTH_SCRIPT=/home/nds/healthcheck.py` (default)
@@ -114,6 +120,9 @@ The Fleet tab’s **Start/Stop/Restart** buttons call:
 - `POST <serverBaseUrl>/api/jamulus/restart`
 
 Those endpoints must exist on each server (or you’ll see upstream 404/502 errors).
+
+Notes:
+- The dashboard forwards `X-Request-Id` (if provided) to the server to support idempotency/correlation.
 
 ---
 
