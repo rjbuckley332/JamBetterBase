@@ -1172,6 +1172,53 @@ def get_lock_status():
     return jsonify({"is_locked": os.path.exists(LOCK_FILE)})
 
 
+# ---------- OPS: Jamulus service controls (Fleet dashboard) ----------
+JAMULUS_SERVICE = os.getenv('JAMULUS_SERVICE', 'jamulus-headless.service')
+
+
+def _systemctl(action: str) -> tuple[int, str]:
+    """Run systemctl via sudo (non-interactive)."""
+    action = (action or '').strip().lower()
+    if action not in ('start', 'stop', 'restart'):
+        return 2, 'invalid action'
+    try:
+        p = subprocess.run(
+            ['sudo', '-n', 'systemctl', action, JAMULUS_SERVICE],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=25,
+        )
+        return p.returncode, (p.stdout or '').strip()
+    except Exception as e:
+        return 1, str(e)
+
+
+def _api_jamulus_action(action: str):
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    rc, out = _systemctl(action)
+    if rc == 0:
+        return jsonify({'ok': True, 'action': action, 'service': JAMULUS_SERVICE, 'output': out})
+    return jsonify({'ok': False, 'action': action, 'service': JAMULUS_SERVICE, 'rc': rc, 'output': out}), 500
+
+
+@app.route('/api/jamulus/start', methods=['POST'])
+def api_jamulus_start():
+    return _api_jamulus_action('start')
+
+
+@app.route('/api/jamulus/stop', methods=['POST'])
+def api_jamulus_stop():
+    return _api_jamulus_action('stop')
+
+
+@app.route('/api/jamulus/restart', methods=['POST'])
+def api_jamulus_restart():
+    return _api_jamulus_action('restart')
+
+
 
 @app.route('/bot/restart-jamulus', methods=['POST'])
 def bot_restart_jamulus():
