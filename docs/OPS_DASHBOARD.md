@@ -49,6 +49,8 @@ File format:
       "id": "vps-0001",
       "name": "pipedreamers",
       "url": "https://pipedreamers.example.com",
+      "zone": "home",
+      "tags": ["prod"],
       "token": "<optional per-server token>",
       "timeout": 4
     }
@@ -58,6 +60,8 @@ File format:
 
 Notes:
 - `url` should be the **base URL** of the JamBetter server (no trailing path).
+- `zone` is optional (defaults to `home` if omitted).
+- `tags` is optional (array of strings).
 - The fleet poller probes these status endpoints (first one that works):
   - `/api/support/status` (preferred)
   - `/ops/status`
@@ -71,9 +75,12 @@ Expected JSON shape (minimum) from a server status endpoint:
   "server_id": "vps-0001",
   "quality": {"grade": "green|yellow|red", "label": "..."},
   "load": {"load1": 0.12, "cores": 2},
-  "disk": {"used_pct": 17.3}
+  "disk": {"used_pct": 17.3},
+  "jamulus": {"service": {"state": "active|inactive|failed|unknown"}}
 }
 ```
+
+If `jamulus.service.state` is present, the dashboard renders it in the **Jamulus** column.
 
 ### Pins storage
 
@@ -109,6 +116,13 @@ The Fleet tab’s **Start/Stop/Restart** buttons call:
 Those endpoints must exist on each server (or you’ll see upstream 404/502 errors).
 
 ---
+
+Home-zone-first policy
+- Operate each server primarily within its own home zone.
+- Do **not** force cross-zone migration (recordings/data/workloads). Any cross-zone actions must be explicit and operator-initiated.
+
+Rewrite plan
+- See `docs/DASHBOARD_CONTROL_PLANE_PLAN.md` for milestones focused on reliability-safe start/stop orchestration and a unified ops dashboard roadmap.
 
 Next likely steps:
 - Replace file-backed pins with a real DB (e.g., Cloudflare D1 or SQLite)

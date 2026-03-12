@@ -81,7 +81,7 @@ textarea{min-height:90px}
   <div class='row' id='top'></div>
   <div class='card'>
     <table>
-      <thead><tr><th>Server</th><th>Quality</th><th>Load</th><th>Disk</th><th>Reachability</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Reachability</th><th>Actions</th></tr></thead>
       <tbody id='fleet'></tbody>
     </table>
   </div>
@@ -146,8 +146,9 @@ async function loadFleet(){
   const rows=(d.servers||[]).map(x=>{
     const name = x.name || x.id || 'unknown';
     const sid = x.id || '';
+    const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
     if(!x.ok){
-      return `<tr><td>${name}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
+      return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
         <button class='btn' onclick='serverAction("${sid}","start")'>Start</button>
         <button class='btn danger' onclick='serverAction("${sid}","stop")'>Stop</button>
         <button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -156,13 +157,15 @@ async function loadFleet(){
     const q=(x.data.quality||{});
     const L=(x.data.load||{});
     const D=(x.data.disk||{});
+    const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
+    const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${name}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td>${reach}</td><td>${sid?`
+    return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td>${reach}</td><td>${sid?`
       <button class='btn' onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' onclick='serverAction("${sid}","restart")'>Restart</button>
     `:''}</td></tr>`;
-  }).join('') || '<tr><td colspan="6">No servers configured</td></tr>';
+  }).join('') || '<tr><td colspan="8">No servers configured</td></tr>';
 
   document.getElementById('fleet').innerHTML = rows;
   document.getElementById('stamp').textContent = 'Updated: ' + (d.ts || new Date().toISOString());
@@ -292,12 +295,20 @@ def _load_servers() -> list[dict[str, Any]]:
                 if not isinstance(s, dict):
                     continue
                 sid = (s.get("id") or s.get("name") or f"srv-{i+1}").strip()
+                zone = (s.get("zone") or "").strip() or "home"
+                tags = s.get("tags") or []
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(",") if t.strip()]
+                if not isinstance(tags, list):
+                    tags = []
                 out.append({
                     "id": sid,
                     "name": (s.get("name") or sid).strip(),
                     "url": (s.get("url") or "").strip(),
                     "token": (s.get("token") or "").strip(),
                     "timeout": s.get("timeout", 4.0),
+                    "zone": zone,
+                    "tags": tags,
                 })
             return out
     except Exception:
@@ -358,7 +369,7 @@ def _poll_server(entry: dict) -> dict:
     timeout = float(entry.get("timeout", 4.0))
 
     if not url:
-        return {"id": sid, "name": name, "ok": False, "error": "missing url"}
+        return {"id": sid, "name": name, "zone": entry.get("zone"), "tags": entry.get("tags") or [], "ok": False, "error": "missing url"}
 
     # Prefer a stable server-side status API.
     candidates = [
@@ -376,10 +387,10 @@ def _poll_server(entry: dict) -> dict:
     for u in candidates:
         code, data = _http_json(u, headers=headers, timeout=timeout)
         if code and 200 <= code < 300 and isinstance(data, dict):
-            return {"id": sid, "name": name, "ok": True, "data": data, "source": u}
+            return {"id": sid, "name": name, "zone": entry.get("zone"), "tags": entry.get("tags") or [], "ok": True, "data": data, "source": u}
         last_err = data.get("error") if isinstance(data, dict) else str(data)
 
-    return {"id": sid, "name": name, "ok": False, "error": last_err or "unreachable"}
+    return {"id": sid, "name": name, "zone": entry.get("zone"), "tags": entry.get("tags") or [], "ok": False, "error": last_err or "unreachable"}
 
 
 # --- pins (D1-style read/pin API, file-backed for now) ---
@@ -447,6 +458,8 @@ def api_servers():
                 "id": s.get("id"),
                 "name": s.get("name"),
                 "url": s.get("url"),
+                "zone": s.get("zone"),
+                "tags": s.get("tags") or [],
             }
             for s in servers
         ],
@@ -474,7 +487,18 @@ def api_fleet():
 
         # Preserve inventory order (nice for operators).
         by_id = {r.get("id"): r for r in out if isinstance(r, dict)}
-        out = [by_id.get(e.get("id")) or {"id": e.get("id"), "name": e.get("name"), "ok": False, "error": "poll failed"} for e in servers]
+        out = [
+            by_id.get(e.get("id"))
+            or {
+                "id": e.get("id"),
+                "name": e.get("name"),
+                "zone": e.get("zone"),
+                "tags": e.get("tags") or [],
+                "ok": False,
+                "error": "poll failed",
+            }
+            for e in servers
+        ]
 
     alerts = 0
     reachable = 0

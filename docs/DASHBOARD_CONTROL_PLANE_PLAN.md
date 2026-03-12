@@ -1,0 +1,144 @@
+# JamBetter dashboard/control-plane rewrite plan (home-zone-first)
+
+This is a practical plan for evolving the **JamBetter unified ops dashboard** + server control-plane APIs.
+
+**Policy constraints**
+- **Home-zone-first:** Every server is operated primarily within its own “home” zone/context.
+- **No forced cross-zone migration:** The control plane must not automatically move workloads, data, or recordings between zones.
+- Cross-zone work (if ever) must be **explicit, opt-in, and operator-initiated**, with clear UI affordances.
+
+---
+
+## Current state (baseline)
+
+- Operator dashboard: `ops_dashboard_app.py`
+  - Polls per-server status endpoints (prefers `/api/support/status`).
+  - Proxies start/stop/restart to server endpoints: `POST /api/jamulus/{start|stop|restart}`.
+- Server control (today): in `toggle_app.py`
+  - `/api/jamulus/*` calls `_systemctl(action)` directly.
+
+**Main reliability gap:** start/stop/restart are treated as instantaneous and conflict-free. There is no idempotency key, no action-in-flight lock, and no consistent “desired vs actual state” model.
+
+---
+
+## Target outcomes
+
+1. **Reliability-safe orchestration**
+   - Idempotent actions.
+   - No overlapping start/stop/restart.
+   - Clear result states: accepted → in_progress → done|failed.
+   - Safe timeouts and explicit “still working” responses.
+
+2. **Unified ops dashboard milestones**
+   - Single fleet view with consistent status schema.
+   - Per-server drilldown (optional later) without centralizing the world.
+   - Operator notes/audit trail.
+
+3. **Home-zone-first UI/UX**
+   - Inventory includes a `zone` field.
+   - Default view: your “home zone”.
+   - Cross-zone visibility allowed; cross-zone control requires explicit toggle.
+
+---
+
+## Milestones (practical, shippable)
+
+### M1 — Contract: versioned server status schema (read-only)
+**Goal:** make polling consistent and useful.
+
+Server must expose `GET /api/support/status` returning:
+```json
+{
+  "ok": true,
+  "schema_version": 1,
+  "server_id": "vps-0001",
+  "zone": "home", 
+  "ts": "2026-03-12T18:06:00Z",
+
+  "jamulus": {
+    "service": {"state": "active|inactive|failed|unknown", "since": "..."},
+    "jsonrpc": {"reachable": true, "port": 22100},
+    "recorder": {"recording": true, "session": "..."}
+  },
+
+  "quality": {"grade": "green|yellow|red", "label": "..."},
+  "load": {"load1": 0.12, "cores": 2},
+  "disk": {"used_pct": 17.3}
+}
+```
+Notes:
+- `zone` is informational; it does **not** imply migration.
+- `schema_version` allows future additive changes without breaking the dashboard.
+
+**Dashboard work:** render jamulus.service state + ts/last-seen.
+
+### M2 — Server-side orchestration: action journal + lock (write path)
+**Goal:** make `/api/jamulus/*` reliable and safe.
+
+Implement on each server:
+- A single action runner with:
+  - **mutex/lock** (file lock or atomic lockfile) to prevent overlap.
+  - **idempotency key** support (e.g. `X-Request-Id` header).
+  - **journal** persisted locally (e.g. `/tmp/jambetter_actions.json`).
+
+Action semantics:
+- `start`
+  - If already active → return ok + `result: "noop"`.
+- `stop`
+  - If already inactive → ok + noop.
+- `restart`
+  - Treated as stop→start with bounded waits.
+
+Response shape (synchronous MVP):
+```json
+{ "ok": true, "request_id": "...", "action": "restart", "result": "done|noop", "details": "..." }
+```
+If long-running, allow:
+```json
+{ "ok": true, "request_id": "...", "action": "restart", "result": "accepted" }
+```
+And expose:
+- `GET /api/jamulus/action/<request_id>` → returns progress/result.
+
+### M3 — Dashboard: action UX with “in-flight” state
+**Goal:** stop double-click/retry chaos.
+
+- Dashboard generates a `request_id` per action.
+- Buttons disabled while action in-flight for that server.
+- Show last action result + timestamp.
+- If upstream returns `accepted`, dashboard polls the action status endpoint briefly (bounded) and then falls back to “pending” display.
+
+### M4 — Home-zone-first enforcement in the dashboard
+**Goal:** avoid accidental cross-zone ops.
+
+- Add to `ops_servers.json`:
+```json
+{ "id": "vps-0001", "name": "...", "url": "...", "zone": "home", "tags": ["prod"] }
+```
+- Dashboard default filter: `zone=home`.
+- Add a UI toggle: “Show all zones”.
+- Add a UI toggle: “Enable cross-zone control” (off by default). When off, buttons for non-home zones are disabled.
+
+### M5 — Audit log (operator-friendly)
+**Goal:** explain what happened without SSH.
+
+- Append-only action log:
+  - who/what/when (best-effort): request_id, server_id, action, result, ts, upstream_code.
+- This can be file-backed initially; later move to SQLite/D1.
+
+---
+
+## Near-term TODO list (next work session)
+
+1. Extend `ops_servers.json` parser to accept `zone` + `tags` (backward compatible).
+2. Extend dashboard table to display `zone` and jamulus `service.state` when present.
+3. Draft the server-side action journal/lock design (choose: lockfile vs `fcntl.flock`).
+4. Update `docs/OPS_DASHBOARD.md` with home-zone-first policy + new schema fields.
+
+---
+
+## Explicit non-goals (for this rewrite)
+
+- No automated migration of recordings/library objects between servers/zones.
+- No central “master” that takes ownership of servers.
+- No cross-zone failover without explicit operator command + clear UI.
