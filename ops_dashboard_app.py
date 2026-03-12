@@ -23,6 +23,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -98,7 +99,7 @@ textarea{min-height:90px}
   </div>
   <div class='card'>
     <table>
-      <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Last seen</th><th>Reachability</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Last seen</th><th>Reachability</th><th>Last action</th><th>Actions</th></tr></thead>
       <tbody id='fleet'></tbody>
     </table>
   </div>
@@ -137,6 +138,17 @@ textarea{min-height:90px}
 
 <script>
 function b(g,l){const c=g==='green'?'green':(g==='yellow'?'yellow':(g==='red'?'red':'gray'));return `<span class='badge ${c}'>${l}</span>`}
+function lastActionCell(a){
+  if(!a) return `<span class='small'>-</span>`;
+  const action = a.action || '';
+  const ok = (a.ok===true) ? 'ok' : (a.ok===false ? 'fail' : '');
+  const ts = a.ts || '';
+  const rid = a.request_id || '';
+  const code = (a.upstream_code!==undefined && a.upstream_code!==null) ? String(a.upstream_code) : '';
+  const line1 = [action, ok].filter(Boolean).join(' ');
+  const line2 = [ts, rid ? ('rid:'+rid) : '', code ? ('code:'+code) : ''].filter(Boolean).join(' · ');
+  return `<div class='small'>${(line1||'-').replaceAll('<','&lt;')}<br>${(line2||'').replaceAll('<','&lt;')}</div>`;
+}
 
 const OPS_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
 const HOME_ZONE = 'home';
@@ -190,7 +202,7 @@ async function loadFleet(){
     const sid = x.id || '';
     const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
     if(!x.ok){
-      return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${sid?`
+      return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
         <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -203,12 +215,12 @@ async function loadFleet(){
     const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${sid?`
+    return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
       <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
     `:''}</td></tr>`;
-  }).join('') || '<tr><td colspan="9">No servers configured</td></tr>';
+  }).join('') || '<tr><td colspan="10">No servers configured</td></tr>';
 
   document.getElementById('fleet').innerHTML = rows;
   document.getElementById('stamp').textContent = 'Updated: ' + (d.ts || new Date().toISOString());
@@ -229,9 +241,27 @@ async function serverAction(serverId, action){
   const d = await r.json().catch(()=>({ok:false,error:'bad json'}));
   if(!r.ok || !d.ok){
     alert(`Action failed: ${d.error||r.status}`);
-  } else {
-    alert('Action sent.');
+    delete inFlight[serverId];
+    await loadFleet();
+    return;
   }
+
+  // If the server supports async actions, poll briefly for completion.
+  const up = d.upstream || {};
+  const state = (up.state || up.result || '').toString().toLowerCase();
+  const maybeAsync = (state === 'accepted' || state === 'in_progress');
+  if(maybeAsync){
+    for(let i=0;i<10;i++){
+      await new Promise(res=>setTimeout(res, 1000));
+      const rr = await fetch(`/api/server/${encodeURIComponent(serverId)}/action/${encodeURIComponent(request_id)}`, {headers: authHeaders()});
+      const dd = await rr.json().catch(()=>({ok:false}));
+      const u2 = (dd.upstream || {});
+      const st2 = (u2.state || u2.result || '').toString().toLowerCase();
+      if(st2 && st2 !== 'accepted' && st2 !== 'in_progress') break;
+    }
+  }
+
+  alert('Action sent.');
   delete inFlight[serverId];
   await loadFleet();
 }
@@ -319,6 +349,33 @@ def _audit_append(event: dict) -> None:
             f.write(json.dumps(event, sort_keys=True) + "\n")
     except Exception:
         pass
+
+
+def _audit_last_actions(*, max_lines: int = 400) -> dict[str, dict]:
+    """Return last audit row per server_id (best effort).
+
+    This keeps the dashboard stateless while still showing operators the
+    most recent start/stop/restart action observed by the proxy.
+    """
+    out: dict[str, dict] = {}
+    try:
+        dq: deque[str] = deque(maxlen=max_lines)
+        with open(AUDIT_FILE, "r", encoding="utf-8") as f:
+            for ln in f:
+                if ln.strip():
+                    dq.append(ln)
+        for ln in reversed(dq):
+            try:
+                row = json.loads(ln)
+            except Exception:
+                continue
+            sid = (row.get("server_id") or "").strip()
+            if not sid or sid in out:
+                continue
+            out[sid] = row
+    except Exception:
+        return {}
+    return out
 
 
 def _run_healthcheck() -> None:
@@ -559,6 +616,15 @@ def api_fleet():
             for e in servers
         ]
 
+    audit_last = _audit_last_actions()
+    for row in out:
+        try:
+            sid = (row.get("id") or "").strip()
+            if sid and sid in audit_last:
+                row["last_action"] = audit_last[sid]
+        except Exception:
+            pass
+
     alerts = 0
     reachable = 0
     for row in out:
@@ -645,6 +711,34 @@ def api_server_action(server_id: str):
 
     return (
         jsonify({"ok": False, "ts": ts, "error": "upstream failed", "request_id": request_id, "upstream_code": code, "upstream": data}),
+        502,
+    )
+
+
+@app.route("/api/server/<server_id>/action/<request_id>")
+def api_server_action_status(server_id: str, request_id: str):
+    if not _authorized():
+        return (jsonify({"ok": False, "error": "unauthorized"}), 401)
+
+    server = _server_by_id(server_id)
+    if not server:
+        return (jsonify({"ok": False, "error": "unknown server"}), 404)
+
+    base = (server.get("url") or "").rstrip("/")
+    if not base:
+        return (jsonify({"ok": False, "error": "missing server url"}), 400)
+
+    endpoint = f"{base}/api/jamulus/action/{urllib.parse.quote(str(request_id))}"
+    headers: dict[str, str] = {}
+    if server.get("token"):
+        headers["X-Ops-Token"] = server["token"]
+
+    code, data = _http_json(endpoint, method="GET", headers=headers, timeout=8.0)
+    ok = bool(code and 200 <= code < 300 and isinstance(data, dict) and data.get("ok") is not False)
+    if ok:
+        return jsonify({"ok": True, "ts": _utc_ts(), "server": server_id, "request_id": request_id, "upstream": data})
+    return (
+        jsonify({"ok": False, "ts": _utc_ts(), "server": server_id, "request_id": request_id, "error": "upstream failed", "upstream_code": code, "upstream": data}),
         502,
     )
 
