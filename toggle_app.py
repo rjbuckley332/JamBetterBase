@@ -39,6 +39,10 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 # Passcode gate disabled (we may reintroduce auth at the reverse-proxy layer later).
 WEB_PASSCODE = ""
 
+# Ops token for machine-to-machine control (fleet dashboard polling + start/stop).
+# If set, callers must supply X-Ops-Token: <token> (or ?token=... for GETs).
+OPS_SERVER_TOKEN = (os.getenv("OPS_SERVER_TOKEN", "") or "").strip()
+
 
 # ---------- CONSTANTS / PATHS ----------
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
@@ -144,6 +148,23 @@ def index():
 
 def _require_passcode():
     """Passcode gate disabled: always allow."""
+    return True, None
+
+
+def _require_ops_token():
+    """Optional shared token for ops surfaces (fleet dashboard + automation).
+
+    If OPS_SERVER_TOKEN is set, require a matching token in:
+      - X-Ops-Token header, or
+      - ?token=... query param (GET convenience).
+
+    Note: This is intentionally separate from WEB_PASSCODE.
+    """
+    if not OPS_SERVER_TOKEN:
+        return True, None
+    tok = (request.headers.get('X-Ops-Token') or request.args.get('token') or '').strip()
+    if tok != OPS_SERVER_TOKEN:
+        return False, (jsonify({'ok': False, 'error': 'unauthorized'}), 401)
     return True, None
 
 
@@ -864,6 +885,9 @@ def api_support_status():
     ok, resp = _require_passcode()
     if not ok:
         return resp
+    ok, resp = _require_ops_token()
+    if not ok:
+        return resp
     return jsonify(_support_status_payload())
 
 
@@ -884,6 +908,9 @@ def ops_status():
     but older clients used /api/support/status.
     """
     ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    ok, resp = _require_ops_token()
     if not ok:
         return resp
     return jsonify(_support_status_payload())
@@ -1336,6 +1363,9 @@ def api_jamulus_action_status(request_id: str):
     ok, resp = _require_passcode()
     if not ok:
         return resp
+    ok, resp = _require_ops_token()
+    if not ok:
+        return resp
     row = _jamulus_action_find(request_id)
     if not row:
         return jsonify({'ok': False, 'error': 'not found', 'request_id': request_id}), 404
@@ -1343,6 +1373,9 @@ def api_jamulus_action_status(request_id: str):
 
 def _api_jamulus_action(action: str):
     ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    ok, resp = _require_ops_token()
     if not ok:
         return resp
 
