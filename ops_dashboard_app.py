@@ -104,6 +104,11 @@ textarea{min-height:90px}
         </select>
         <div class='small'>Tip: zones are auto-discovered from <code>/api/servers</code>.</div>
       </div>
+      <div style='min-width:220px'>
+        <div class='small'>Tag filter (optional)</div>
+        <input id='tagFilter' placeholder='e.g., prod' style='padding:6px 10px' />
+        <div class='small'>Matches exact tag strings from the inventory.</div>
+      </div>
       <label style='display:flex; gap:8px; align-items:center'>
         <input type='checkbox' id='crossZoneCtrl' />
         <span>Enable cross-zone control</span>
@@ -178,6 +183,7 @@ function lastActionCell(a){
 const OPS_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
 const HOME_ZONE = 'home';
 const LS_ZONE = 'jambetter_zoneFilter';
+const LS_TAG = 'jambetter_tagFilter';
 const LS_CROSS = 'jambetter_crossZoneControl';
 let inFlight = {};
 function newReqId(){
@@ -192,11 +198,19 @@ function authHeaders(){
 
 function initZoneControls(){
   const sel = document.getElementById('zoneFilter');
+  const tag = document.getElementById('tagFilter');
   const cb = document.getElementById('crossZoneCtrl');
   if(!sel || !cb) return;
   sel.value = localStorage.getItem(LS_ZONE) || 'home';
+  if(tag){
+    tag.value = (localStorage.getItem(LS_TAG) || '');
+  }
   cb.checked = (localStorage.getItem(LS_CROSS) || '0') === '1';
   sel.addEventListener('change', ()=>{ localStorage.setItem(LS_ZONE, sel.value); loadFleet(); });
+  if(tag){
+    tag.addEventListener('change', ()=>{ localStorage.setItem(LS_TAG, tag.value.trim()); loadFleet(); });
+    tag.addEventListener('keyup', (ev)=>{ if(ev.key==='Enter'){ localStorage.setItem(LS_TAG, tag.value.trim()); loadFleet(); }});
+  }
   cb.addEventListener('change', ()=>{ localStorage.setItem(LS_CROSS, cb.checked ? '1':'0'); loadFleet(); });
 }
 
@@ -239,7 +253,10 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>set
 
 async function loadFleet(){
   const zoneFilter = (document.getElementById('zoneFilter')||{}).value || (localStorage.getItem(LS_ZONE) || 'home');
-  const r=await fetch('/api/fleet?zone=' + encodeURIComponent(zoneFilter), {headers: authHeaders()});
+  const tagFilter = (document.getElementById('tagFilter')||{}).value || (localStorage.getItem(LS_TAG) || '');
+  const qs = new URLSearchParams({zone: zoneFilter});
+  if(tagFilter && tagFilter.trim()) qs.set('tag', tagFilter.trim());
+  const r=await fetch('/api/fleet?' + qs.toString(), {headers: authHeaders()});
   const d=await r.json();
   const s=d.summary||{};
   document.getElementById('top').innerHTML = `
@@ -700,12 +717,13 @@ def api_fleet():
         return (jsonify({"ok": False, "error": "unauthorized"}), 401)
 
     zone = (request.args.get("zone") or "all").strip()
+    tag = (request.args.get("tag") or "").strip()
     # Treat home as a first-class selector; any other string is matched literally.
 
     # Cache whole-fleet responses briefly to avoid thundering herds when
     # multiple operators have the page open.
     now_s = datetime.now(timezone.utc).timestamp()
-    cache_key = f"zone:{zone or 'all'}"
+    cache_key = f"zone:{zone or 'all'}|tag:{tag or 'any'}"
     cached = _FLEET_CACHE.get(cache_key) or {}
     try:
         cached_ts = float(cached.get("ts") or 0.0)
@@ -719,6 +737,8 @@ def api_fleet():
     servers = _load_servers()
     if zone and zone != "all":
         servers = [s for s in servers if (s.get("zone") or "home") == zone]
+    if tag:
+        servers = [s for s in servers if tag in (s.get("tags") or [])]
 
     # Poll in parallel to keep UI snappy as fleet size grows.
     out: list[dict] = []

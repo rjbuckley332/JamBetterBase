@@ -17,6 +17,7 @@ Primary API surface:
 - `GET /api/servers` → server inventory
 - `GET /api/fleet` → fleet status rollup (polls each server in parallel)
   - Optional: `GET /api/fleet?zone=home|all|<zone>` to reduce polling to a single zone.
+  - Optional: `GET /api/fleet?...&tag=<tag>` to restrict to servers whose inventory tags include `<tag>` (exact match).
 - `POST /api/server/<id>/action` body `{ "action": "start|stop|restart" }` → proxies to the server
 - `GET /api/pins` → list pins
 - `POST /api/pins` body `{ "title": "...", "body": "..." }` → create pin (defaults to pinned=true)
