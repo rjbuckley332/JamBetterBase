@@ -64,8 +64,8 @@ Notes:
   - The Fleet tab’s zone dropdown auto-discovers zones by calling `GET /api/servers`.
 - `tags` is optional (array of strings).
 - The fleet poller probes these status endpoints (first one that works):
-  - `/api/support/status` (preferred)
-  - `/ops/status`
+  - `/ops/status` (preferred stable schema)
+  - `/api/support/status` (back-compat)
   - `/status`
   - `/` (last resort)
 
@@ -98,6 +98,13 @@ The remote service is expected to expose the same endpoints as this dashboard:
 - `GET/POST  /api/pins`
 - `POST     /api/pins/<pin_id>/pin`
 - `DELETE   /api/pins/<pin_id>`
+
+### Fleet polling cache
+
+If multiple operators open the dashboard, the `GET /api/fleet` endpoint can cause a burst of polls.
+
+- `OPS_FLEET_CACHE_S=5` (default) caches the whole fleet response in-memory for N seconds.
+- Set to `0` to disable caching.
 
 ### Audit log
 

@@ -51,6 +51,10 @@ PINS_REMOTE_TOKEN = (os.getenv("OPS_PINS_REMOTE_TOKEN", "") or "").strip()
 
 AUDIT_FILE = os.getenv("OPS_AUDIT_FILE", "/tmp/jambetter_ops_audit.jsonl")
 
+# Fleet polling cache (reduces load if multiple operators open the dashboard).
+FLEET_CACHE_S = float(os.getenv("OPS_FLEET_CACHE_S", "5"))
+_FLEET_CACHE: dict[str, Any] = {"ts": 0.0, "payload": None}
+
 HTML = """
 <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>JamBetter Fleet Ops</title>
@@ -641,6 +645,18 @@ def api_fleet():
     if not _authorized():
         return (jsonify({"ok": False, "error": "unauthorized"}), 401)
 
+    # Cache whole-fleet responses briefly to avoid thundering herds when
+    # multiple operators have the page open.
+    now_s = datetime.now(timezone.utc).timestamp()
+    try:
+        cached_ts = float(_FLEET_CACHE.get("ts") or 0.0)
+    except Exception:
+        cached_ts = 0.0
+    if FLEET_CACHE_S > 0 and (now_s - cached_ts) <= FLEET_CACHE_S:
+        payload = _FLEET_CACHE.get("payload")
+        if isinstance(payload, dict):
+            return jsonify(payload)
+
     servers = _load_servers()
 
     # Poll in parallel to keep UI snappy as fleet size grows.
@@ -690,12 +706,18 @@ def api_fleet():
         else:
             alerts += 1
 
-    return jsonify({
+    payload = {
         "ok": True,
         "ts": _utc_ts(),
         "summary": {"total": len(servers), "reachable": reachable, "alerts": alerts},
         "servers": out,
-    })
+        "cache": {"ttl_s": FLEET_CACHE_S, "generated_at": _utc_ts()},
+    }
+
+    _FLEET_CACHE["ts"] = now_s
+    _FLEET_CACHE["payload"] = payload
+
+    return jsonify(payload)
 
 
 # Back-compat alias
