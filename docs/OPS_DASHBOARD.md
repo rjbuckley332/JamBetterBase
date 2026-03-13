@@ -198,6 +198,6 @@ Rewrite plan
 - See `docs/DASHBOARD_CONTROL_PLANE_PLAN.md` for milestones focused on reliability-safe start/stop orchestration and a unified ops dashboard roadmap.
 
 Next likely steps:
-- Replace file-backed pins with a real DB (e.g., Cloudflare D1 or SQLite)
-- Add per-action audit log
-- Add caching + last-seen timestamps to reduce poll load
+- If you need shared pins across operators/hosts: deploy the included Cloudflare Worker + D1 backend in `ops/pins-worker/` and set `OPS_PINS_REMOTE_URL` + `OPS_PINS_REMOTE_TOKEN`.
+- Consider moving the **audit log** from local JSONL to a shared backend (SQLite/D1) if multiple operators need the same action history.
+- Auth hardening: decide whether a single shared `OPS_DASHBOARD_TOKEN` is sufficient, or whether to layer per-operator auth in front of the dashboard.

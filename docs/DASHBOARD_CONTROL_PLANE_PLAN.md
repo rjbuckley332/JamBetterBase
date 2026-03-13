@@ -155,11 +155,13 @@ Already completed in this repo:
 - Server-side action journal + `fcntl.flock()` mutex + idempotency key is implemented.
 - Docs include home-zone-first UX + schema notes.
 
-Next practical items:
-1. Add an explicit dashboard-side “operator identity” field (optional) and include it in the audit log (best-effort).
-2. Add lightweight rate limiting / cooldown on action buttons per server to reduce accidental repeat-clicks.
-3. Add a per-server “last seen” computation in the dashboard (derived from `ts`) and highlight stale servers.
-4. Add a simple export/download for audit log + pins (JSON) for incident review.
+Next practical items (remaining):
+1. **Tighten auth boundaries**: decide whether the dashboard token is sufficient, or if per-operator auth is needed.
+2. **Harden action proxy**: optional server-side rate limiting + clearer upstream error surfacing (e.g. show 401/403 distinctly).
+3. **Remote audit** (optional): move audit log from local JSONL to a shared backend (SQLite/D1) for multi-operator visibility.
+4. **Richer drilldown**: add structured “server detail” UI (beyond raw JSON) once the status schema stabilizes further.
+
+(Recently completed in this repo: operator id field, per-server cooldown, stale/last-seen highlighting, and export/download for pins + audit.)
 
 ---
 
