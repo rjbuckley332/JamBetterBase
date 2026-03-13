@@ -1,0 +1,12 @@
+name = "jambetter-ops-pins"
+main = "src/index.ts"
+compatibility_date = "2026-03-01"
+
+[vars]
+# Required: shared token for the dashboard to authenticate.
+OPS_PINS_TOKEN = "change-me"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jambetter-pins"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
