@@ -94,6 +94,7 @@ textarea{min-height:90px}
           <option value='home'>home</option>
           <option value='all'>all</option>
         </select>
+        <div class='small'>Tip: zones are auto-discovered from <code>/api/servers</code>.</div>
       </div>
       <label style='display:flex; gap:8px; align-items:center'>
         <input type='checkbox' id='crossZoneCtrl' />
@@ -180,6 +181,36 @@ function initZoneControls(){
   cb.addEventListener('change', ()=>{ localStorage.setItem(LS_CROSS, cb.checked ? '1':'0'); loadFleet(); });
 }
 
+async function loadZones(){
+  const sel = document.getElementById('zoneFilter');
+  if(!sel) return;
+  try{
+    const r = await fetch('/api/servers', {headers: authHeaders()});
+    const d = await r.json();
+    const zones = new Set([HOME_ZONE]);
+    (d.servers||[]).forEach(s=>{ const z=(s.zone||'').trim()||HOME_ZONE; zones.add(z); });
+    const extra = Array.from(zones).filter(z=>z && z!==HOME_ZONE).sort();
+
+    // Keep the first two options (home/all), then insert discovered zones.
+    const keep = new Set(['home','all']);
+    const current = sel.value || (localStorage.getItem(LS_ZONE) || 'home');
+    sel.querySelectorAll('option').forEach(o=>{ if(!keep.has(o.value)) o.remove(); });
+    extra.forEach(z=>{
+      const opt = document.createElement('option');
+      opt.value = z;
+      opt.textContent = z;
+      sel.appendChild(opt);
+    });
+
+    // Restore selection if still valid; otherwise fall back to home.
+    const valid = Array.from(sel.querySelectorAll('option')).map(o=>o.value);
+    sel.value = valid.includes(current) ? current : 'home';
+    localStorage.setItem(LS_ZONE, sel.value);
+  }catch(e){
+    // Best-effort only; zone selector still works with home/all.
+  }
+}
+
 function setTab(tabId){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tabId));
   ['fleetTab','pinsTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
@@ -200,8 +231,10 @@ async function loadFleet(){
   const zoneFilter = (document.getElementById('zoneFilter')||{}).value || (localStorage.getItem(LS_ZONE) || 'home');
   const crossEnabled = ((document.getElementById('crossZoneCtrl')||{}).checked) || ((localStorage.getItem(LS_CROSS) || '0')==='1');
   const rows=(d.servers||[]).filter(x=>{
-    const z = x.zone || (x.inventory && x.inventory.zone) || 'home';
-    return zoneFilter==='all' || z===HOME_ZONE;
+    const z = x.zone || (x.inventory && x.inventory.zone) || HOME_ZONE;
+    if(zoneFilter==='all') return true;
+    if(zoneFilter==='home') return z===HOME_ZONE;
+    return z===zoneFilter;
   }).map(x=>{
     const name = x.name || x.id || 'unknown';
     const sid = x.id || '';
@@ -328,6 +361,7 @@ async function loadHealth(){
 }
 
 initZoneControls();
+loadZones();
 loadFleet();
 loadPins();
 setInterval(loadFleet, 15000);

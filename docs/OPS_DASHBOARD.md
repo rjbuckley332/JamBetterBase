@@ -61,6 +61,7 @@ File format:
 Notes:
 - `url` should be the **base URL** of the JamBetter server (no trailing path).
 - `zone` is optional (defaults to `home` if omitted).
+  - The Fleet tab’s zone dropdown auto-discovers zones by calling `GET /api/servers`.
 - `tags` is optional (array of strings).
 - The fleet poller probes these status endpoints (first one that works):
   - `/api/support/status` (preferred)
