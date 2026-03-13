@@ -1,0 +1,22 @@
+{
+  "servers": [
+    {
+      "id": "vps-0001",
+      "name": "pipedreamers",
+      "url": "https://pipedreamers.example.com",
+      "zone": "home",
+      "tags": ["prod"],
+      "token": "",
+      "timeout": 4
+    },
+    {
+      "id": "vps-0002",
+      "name": "canary",
+      "url": "https://canary.example.com",
+      "zone": "staging",
+      "tags": ["canary"],
+      "token": "",
+      "timeout": 4
+    }
+  ]
+}

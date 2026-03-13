@@ -39,6 +39,9 @@ If `OPS_DASHBOARD_TOKEN` is unset/empty, the dashboard is open.
 
 By default the dashboard loads `ops_servers.json` in the repo root.
 
+Templates:
+- `ops_servers.template.json` (example multi-zone inventory)
+
 Override with:
 - `OPS_SERVERS_FILE=/path/to/ops_servers.json`
 
@@ -131,6 +134,18 @@ Then open:
 
 If you set a token:
 - `http://127.0.0.1:5090/?token=YOUR_TOKEN`
+
+## Running as a service (systemd template)
+
+See:
+- `deploy/ops-dashboard.service.template`
+- `deploy/ops-dashboard.env.example`
+
+These are templates meant to be copied to your target host and adjusted for:
+- the repo path (where `ops_dashboard_app.py` lives)
+- the user/group to run as
+- the inventory path (`OPS_SERVERS_FILE`)
+- pins/audit/health paths
 
 ## Server-side requirements (control plane)
 

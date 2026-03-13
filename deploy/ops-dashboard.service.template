@@ -1,0 +1,37 @@
+# JamBetter unified ops dashboard (systemd unit template)
+#
+# Usage (example):
+#   sudo install -d /etc/jambetter
+#   sudo cp deploy/ops-dashboard.env.example /etc/jambetter/ops-dashboard.env
+#   sudo cp deploy/ops-dashboard.service.template /etc/systemd/system/jambetter-ops-dashboard.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now jambetter-ops-dashboard.service
+#
+# Notes:
+# - This binds to 127.0.0.1 by default (see ops_dashboard_app.py). Put nginx/Caddy in front if you need TLS.
+# - Requires python3 + flask installed in the runtime environment.
+
+[Unit]
+Description=JamBetter Unified Ops Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nds
+Group=nds
+WorkingDirectory=/home/nds/jambetterbase
+EnvironmentFile=-/etc/jambetter/ops-dashboard.env
+ExecStart=/usr/bin/python3 /home/nds/jambetterbase/ops_dashboard_app.py
+Restart=on-failure
+RestartSec=3
+
+# Hardening (keep modest; dashboard needs outbound HTTPS to poll servers)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/jambetter /var/log/jambetter /tmp
+
+[Install]
+WantedBy=multi-user.target
