@@ -11,13 +11,32 @@ This is a practical plan for evolving the **JamBetter unified ops dashboard** + 
 
 ## Current state (baseline)
 
-- Operator dashboard: `ops_dashboard_app.py`
-  - Polls per-server status endpoints (prefers `/api/support/status`).
-  - Proxies start/stop/restart to server endpoints: `POST /api/jamulus/{start|stop|restart}`.
-- Server control (today): in `toggle_app.py`
-  - `/api/jamulus/*` calls `_systemctl(action)` directly.
+As of the current implementation in this repo:
 
-**Main reliability gap:** start/stop/restart are treated as instantaneous and conflict-free. There is no idempotency key, no action-in-flight lock, and no consistent “desired vs actual state” model.
+- Operator dashboard: `ops_dashboard_app.py`
+  - Inventory API: `GET /api/servers` (supports `zone` + `tags`)
+  - Fleet rollup: `GET /api/fleet?zone=home|all|<zone>&tag=<tag>`
+  - Start/stop/restart proxy: `POST /api/server/<id>/action`
+  - Per-server drilldown: `GET /server/<id>` (raw JSON payload for debugging)
+  - Home-zone-first UX:
+    - Default view is `zone=home`
+    - Cross-zone visibility is allowed
+    - Cross-zone control requires an explicit UI toggle
+  - Pins API: file-backed by default, optionally proxied to a remote backend
+
+- Server control plane (on each JamBetter host): `toggle_app.py`
+  - Read-only status contract:
+    - `GET /ops/status` (preferred stable schema)
+    - `GET /api/support/status` (back-compat alias)
+    - Includes `schema_version: 1`, `zone`, `quality`, `load`, `disk`, and `jamulus.service.state`
+  - Reliability-safe orchestration for Jamulus actions:
+    - `POST /api/jamulus/{start|stop|restart}`
+    - Idempotency key via `X-Request-Id` / `request_id`
+    - Single-action mutex via `fcntl.flock()`
+    - Append-only journal for action status
+    - `GET /api/jamulus/action/<request_id>` for action result/progress
+
+Primary remaining gaps are mostly “polish + hardening” items (rate limiting, richer drilldown, stronger auth boundaries, and a better shared audit trail).
 
 ---
 
@@ -130,10 +149,17 @@ And expose:
 
 ## Near-term TODO list (next work session)
 
-1. Extend `ops_servers.json` parser to accept `zone` + `tags` (backward compatible).
-2. Extend dashboard table to display `zone` and jamulus `service.state` when present.
-3. Draft the server-side action journal/lock design (choose: lockfile vs `fcntl.flock`).
-4. Update `docs/OPS_DASHBOARD.md` with home-zone-first policy + new schema fields.
+Already completed in this repo:
+- Inventory supports `zone` + `tags`.
+- Fleet table renders `zone`, `tags`, and `jamulus.service.state`.
+- Server-side action journal + `fcntl.flock()` mutex + idempotency key is implemented.
+- Docs include home-zone-first UX + schema notes.
+
+Next practical items:
+1. Add an explicit dashboard-side “operator identity” field (optional) and include it in the audit log (best-effort).
+2. Add lightweight rate limiting / cooldown on action buttons per server to reduce accidental repeat-clicks.
+3. Add a per-server “last seen” computation in the dashboard (derived from `ts`) and highlight stale servers.
+4. Add a simple export/download for audit log + pins (JSON) for incident review.
 
 ---
 
