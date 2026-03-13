@@ -166,10 +166,11 @@ function lastActionCell(a){
   if(!a) return `<span class='small'>-</span>`;
   const action = a.action || '';
   const ok = (a.ok===true) ? 'ok' : (a.ok===false ? 'fail' : '');
+  const result = a.upstream_result || a.upstream_state || '';
   const ts = a.ts || '';
   const rid = a.request_id || '';
   const code = (a.upstream_code!==undefined && a.upstream_code!==null) ? String(a.upstream_code) : '';
-  const line1 = [action, ok].filter(Boolean).join(' ');
+  const line1 = [action, result, ok].filter(Boolean).join(' ');
   const line2 = [ts, rid ? ('rid:'+rid) : '', code ? ('code:'+code) : ''].filter(Boolean).join(' · ');
   return `<div class='small'>${(line1||'-').replaceAll('<','&lt;')}<br>${(line2||'').replaceAll('<','&lt;')}</div>`;
 }
@@ -891,6 +892,16 @@ def api_server_action(server_id: str):
 
     ok = bool(code and 200 <= code < 300 and isinstance(data, dict) and data.get("ok") is not False)
 
+    # Capture a tiny bit of upstream semantics to make the Fleet table more informative.
+    upstream_state = None
+    upstream_result = None
+    try:
+        upstream_state = (data or {}).get("state")
+        upstream_result = (data or {}).get("result")
+    except Exception:
+        upstream_state = None
+        upstream_result = None
+
     _audit_append({
         "ts": ts,
         "server_id": server_id,
@@ -899,6 +910,8 @@ def api_server_action(server_id: str):
         "action": action,
         "request_id": request_id,
         "upstream_code": code,
+        "upstream_state": upstream_state,
+        "upstream_result": upstream_result,
         "ok": ok,
     })
 
