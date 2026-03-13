@@ -61,6 +61,8 @@ HTML = """
 <title>JamBetter Fleet Ops</title>
 <style>
 body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0e1116;color:#e7ecf3;margin:0;padding:16px}
+a{color:#9fd3ff;text-decoration:none}
+a:hover{text-decoration:underline}
 .card{background:#161b22;border:1px solid #2a3443;border-radius:10px;padding:12px;margin-bottom:10px}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .badge{padding:4px 8px;border-radius:999px;font-weight:700}
@@ -255,10 +257,12 @@ async function loadFleet(){
   }).map(x=>{
     const name = x.name || x.id || 'unknown';
     const sid = x.id || '';
+    const detailHref = sid ? (`/server/${encodeURIComponent(sid)}` + (OPS_TOKEN ? (`?token=${encodeURIComponent(OPS_TOKEN)}`) : '')) : '';
+    const nameCell = sid ? (`<a href='${detailHref}'>${String(name).replaceAll('<','&lt;')}</a>`) : String(name).replaceAll('<','&lt;');
     const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
     const tags = (x.tags || (x.inventory && x.inventory.tags) || []).map(t=>String(t)).join(', ');
     if(!x.ok){
-      return `<tr><td>${name}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+      return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
         <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -271,7 +275,7 @@ async function loadFleet(){
     const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${name}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+    return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
       <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -779,6 +783,67 @@ def api_fleet():
 @app.route("/fleet")
 def fleet_alias():
     return api_fleet()
+
+
+@app.route("/server/<server_id>")
+def server_detail(server_id: str):
+    """Single-server drilldown view (best-effort).
+
+    This is intentionally lightweight: it polls the server on-demand using the
+    same logic as the fleet rollup and renders the raw JSON for debugging.
+    """
+    if not _authorized():
+        return ("Unauthorized", 401)
+
+    server = _server_by_id(server_id)
+    if not server:
+        return ("Not found", 404)
+
+    polled = _poll_server(server)
+    # Basic HTML (keep it self-contained).
+    detail_html = """
+    <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+    <title>JamBetter Ops · {{ sid }}</title>
+    <style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0e1116;color:#e7ecf3;margin:0;padding:16px}
+    a{color:#9fd3ff;text-decoration:none} a:hover{text-decoration:underline}
+    .card{background:#161b22;border:1px solid #2a3443;border-radius:10px;padding:12px;margin-bottom:10px}
+    .btn{cursor:pointer;border:1px solid #2a3443;background:#0e1116;color:#e7ecf3;border-radius:10px;padding:6px 10px}
+    .btn.danger{border-color:#6b2b2b}
+    pre{white-space:pre-wrap; word-break:break-word}
+    </style></head><body>
+    <div class='card'>
+      <div style='display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap'>
+        <div>
+          <div style='font-size:20px; font-weight:800'>{{ name }}</div>
+          <div style='opacity:.78; font-size:12px'>id={{ sid }} · zone={{ zone }} · source={{ source }}</div>
+        </div>
+        <div style='display:flex; gap:8px; flex-wrap:wrap'>
+          <a class='btn' href='/?token={{ token_q }}'>← Back to fleet</a>
+          <button class='btn' onclick='location.reload()'>Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div class='card'>
+      <div style='opacity:.78; font-size:12px; margin-bottom:8px'>Raw status payload</div>
+      <pre>{{ payload }}</pre>
+    </div>
+
+    </body></html>
+    """
+
+    token_q = (request.args.get("token") or "").strip()
+    payload = json.dumps(polled, indent=2, sort_keys=True)
+    return render_template_string(
+        detail_html,
+        sid=server.get("id"),
+        name=server.get("name") or server.get("id"),
+        zone=server.get("zone") or "home",
+        source=(polled.get("source") or "-"),
+        payload=payload,
+        token_q=urllib.parse.quote(token_q) if token_q else "",
+    )
 
 
 @app.route("/api/server/<server_id>/action", methods=["POST"])
