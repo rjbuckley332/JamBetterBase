@@ -109,6 +109,10 @@ The remote service is expected to expose the same endpoints as this dashboard:
 
 If multiple operators open the dashboard, the `GET /api/fleet` endpoint can cause a burst of polls.
 
+UI notes:
+- Fleet table shows `ts` (last seen) and marks servers as **stale** when the timestamp is older than ~5 minutes.
+- Action buttons apply a short cooldown (~8s) after an action to reduce accidental repeat clicks.
+
 - `OPS_FLEET_CACHE_S=5` (default) caches the fleet response in-memory for N seconds (cache is keyed by `?zone=`).
 - Set to `0` to disable caching.
 
@@ -117,6 +121,15 @@ If multiple operators open the dashboard, the `GET /api/fleet` endpoint can caus
 Action proxy calls (start/stop/restart) are logged best-effort to a local append-only JSONL file.
 
 - `OPS_AUDIT_FILE=/tmp/jambetter_ops_audit.jsonl` (default)
+
+Additional endpoints:
+- `GET /api/audit?limit=200` → `{ ok, ts, audit: [...] }` (tail of the JSONL log)
+- `GET /api/export` → `{ ok, ts, pins: [...], audit: [...] }` (simple incident-review export)
+
+Operator identity (optional):
+- Fleet tab includes an **Operator** field (stored in localStorage).
+- When set, it’s sent as `X-Operator-Id` on action requests and logged as `operator_id` in the audit file.
+
 
 ### Health check
 

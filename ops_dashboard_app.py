@@ -89,6 +89,7 @@ textarea{min-height:90px}
   <button class='tab active' data-tab='fleetTab'>Fleet</button>
   <button class='tab' data-tab='serversTab'>Servers</button>
   <button class='tab' data-tab='pinsTab'>Pins</button>
+  <button class='tab' data-tab='auditTab'>Audit</button>
   <button class='tab' data-tab='healthTab'>Health</button>
 </div>
 
@@ -108,6 +109,11 @@ textarea{min-height:90px}
         <div class='small'>Tag filter (optional)</div>
         <input id='tagFilter' placeholder='e.g., prod' style='padding:6px 10px' />
         <div class='small'>Matches exact tag strings from the inventory.</div>
+      </div>
+      <div style='min-width:220px'>
+        <div class='small'>Operator (optional)</div>
+        <input id='operatorId' placeholder='e.g., rich' style='padding:6px 10px' />
+        <div class='small'>Included in the audit log (best-effort).</div>
       </div>
       <label style='display:flex; gap:8px; align-items:center'>
         <input type='checkbox' id='crossZoneCtrl' />
@@ -156,6 +162,18 @@ textarea{min-height:90px}
   </div>
 </div>
 
+
+<div id='auditTab' class='hidden'>
+  <div class='card'>
+    <div style='display:flex; gap:10px; flex-wrap:wrap; align-items:center'>
+      <button class='btn' onclick='loadAudit()'>Refresh audit</button>
+      <button class='btn' onclick='downloadExport()'>Download export (pins + audit)</button>
+      <div class='small'>Shows recent start/stop/restart actions recorded by the dashboard proxy.</div>
+    </div>
+    <pre id='auditOut' style='white-space:pre-wrap; margin-top:10px'></pre>
+  </div>
+</div>
+
 <div id='healthTab' class='hidden'>
   <div class='card'>
     <button class='btn' onclick='loadHealth()'>Refresh health</button>
@@ -185,7 +203,9 @@ const HOME_ZONE = 'home';
 const LS_ZONE = 'jambetter_zoneFilter';
 const LS_TAG = 'jambetter_tagFilter';
 const LS_CROSS = 'jambetter_crossZoneControl';
+const LS_OP = 'jambetter_operatorId';
 let inFlight = {};
+let cooldown = {};
 function newReqId(){
   if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
@@ -200,12 +220,18 @@ function initZoneControls(){
   const sel = document.getElementById('zoneFilter');
   const tag = document.getElementById('tagFilter');
   const cb = document.getElementById('crossZoneCtrl');
+  const op = document.getElementById('operatorId');
   if(!sel || !cb) return;
   sel.value = localStorage.getItem(LS_ZONE) || 'home';
   if(tag){
     tag.value = (localStorage.getItem(LS_TAG) || '');
   }
   cb.checked = (localStorage.getItem(LS_CROSS) || '0') === '1';
+  if(op){
+    op.value = (localStorage.getItem(LS_OP) || '');
+    op.addEventListener('change', ()=>{ localStorage.setItem(LS_OP, op.value.trim()); });
+    op.addEventListener('keyup', (ev)=>{ if(ev.key==='Enter'){ localStorage.setItem(LS_OP, op.value.trim()); }});
+  }
   sel.addEventListener('change', ()=>{ localStorage.setItem(LS_ZONE, sel.value); loadFleet(); });
   if(tag){
     tag.addEventListener('change', ()=>{ localStorage.setItem(LS_TAG, tag.value.trim()); loadFleet(); });
@@ -246,7 +272,7 @@ async function loadZones(){
 
 function setTab(tabId){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tabId));
-  ['fleetTab','serversTab','pinsTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
+  ['fleetTab','serversTab','pinsTab','auditTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
 }
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>setTab(t.dataset.tab)));
@@ -281,22 +307,30 @@ async function loadFleet(){
     const tags = (x.tags || (x.inventory && x.inventory.tags) || []).map(t=>String(t)).join(', ');
     if(!x.ok){
       return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
-        <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
-      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
-      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
+        <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
       `:''}</td></tr>`;
     }
     const q=(x.data.quality||{});
     const L=(x.data.load||{});
     const D=(x.data.disk||{});
     const lastSeen = (x.data.ts || x.data.last_seen || x.data.timestamp || '') || '-';
+    let staleLabel = '';
+    try{
+      const t = Date.parse(lastSeen);
+      if(!isNaN(t)){
+        const ageS = (Date.now() - t)/1000;
+        if(ageS > 300){ staleLabel = ` · stale ${Math.round(ageS/60)}m`; }
+      }
+    }catch(e){}
     const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
-      <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
-      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
-      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
+    return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}${staleLabel}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+      <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
+      <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
     `:''}</td></tr>`;
   }).join('') || '<tr><td colspan="11">No servers configured</td></tr>';
 
@@ -311,10 +345,11 @@ async function serverAction(serverId, action){
   const request_id = newReqId();
   inFlight[serverId] = {action, request_id, ts: Date.now()};
   await loadFleet();
+  const op = (document.getElementById('operatorId')||{}).value || (localStorage.getItem(LS_OP) || '');
   const r = await fetch(`/api/server/${encodeURIComponent(serverId)}/action`, {
     method:'POST',
-    headers:{...authHeaders(), 'Content-Type':'application/json', 'X-Request-Id': request_id},
-    body: JSON.stringify({action, request_id})
+    headers:{...authHeaders(), 'Content-Type':'application/json', 'X-Request-Id': request_id, ...(op?{'X-Operator-Id': op.trim()}:{} )},
+    body: JSON.stringify({action, request_id, operator_id: (op||'').trim()})
   });
   const d = await r.json().catch(()=>({ok:false,error:'bad json'}));
   if(!r.ok || !d.ok){
@@ -340,6 +375,8 @@ async function serverAction(serverId, action){
   }
 
   alert('Action sent.');
+  // simple cooldown to reduce accidental repeat clicks
+  cooldown[serverId] = Date.now() + 8000;
   delete inFlight[serverId];
   await loadFleet();
 }
@@ -377,6 +414,7 @@ async function createPin(){
   document.getElementById('pinTitle').value='';
   document.getElementById('pinBody').value='';
   await loadPins();
+loadAudit();
 }
 
 async function pinToggle(id, pinned){
@@ -384,6 +422,7 @@ async function pinToggle(id, pinned){
   const d = await r.json().catch(()=>({ok:false}));
   if(!r.ok || !d.ok){ alert('Pin failed: '+(d.error||r.status)); return; }
   await loadPins();
+loadAudit();
 }
 
 async function deletePin(id){
@@ -392,6 +431,7 @@ async function deletePin(id){
   const d = await r.json().catch(()=>({ok:false}));
   if(!r.ok || !d.ok){ alert('Delete failed: '+(d.error||r.status)); return; }
   await loadPins();
+loadAudit();
 }
 
 async function loadServers(){
@@ -406,11 +446,28 @@ async function loadHealth(){
   document.getElementById('healthOut').textContent = JSON.stringify(d, null, 2);
 }
 
+async function loadAudit(){
+  const r = await fetch('/api/audit?limit=200', {headers: authHeaders()});
+  const d = await r.json();
+  document.getElementById('auditOut').textContent = JSON.stringify(d, null, 2);
+}
+
+async function downloadExport(){
+  const r = await fetch('/api/export', {headers: authHeaders()});
+  const d = await r.json();
+  const blob = new Blob([JSON.stringify(d, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'jambetter_ops_export.json';
+  a.click();
+}
+
 initZoneControls();
 loadZones();
 loadFleet();
 loadServers();
 loadPins();
+loadAudit();
 setInterval(loadFleet, 15000);
 </script></body></html>
 """
@@ -462,6 +519,35 @@ def _audit_last_actions(*, max_lines: int = 400) -> dict[str, dict]:
     except Exception:
         return {}
     return out
+
+
+def _audit_tail(*, limit: int = 200) -> list[dict]:
+    # Return last N audit rows (best-effort).
+    try:
+        limit = int(limit or 200)
+    except Exception:
+        limit = 200
+    limit = max(1, min(limit, 2000))
+
+    rows: list[dict] = []
+    try:
+        dq: deque[str] = deque(maxlen=limit)
+        with open(AUDIT_FILE, 'r', encoding='utf-8') as f:
+            for ln in f:
+                if ln.strip():
+                    dq.append(ln)
+        for ln in dq:
+            try:
+                r = json.loads(ln)
+            except Exception:
+                continue
+            if isinstance(r, dict):
+                rows.append(r)
+    except Exception:
+        return []
+
+    return rows
+
 
 
 def _run_healthcheck() -> None:
@@ -922,6 +1008,11 @@ def api_server_action(server_id: str):
         upstream_state = None
         upstream_result = None
 
+    operator_id = (
+        (request.headers.get('X-Operator-Id') or '').strip()
+        or (d.get('operator_id') or d.get('operatorId') or '').strip()
+    )
+
     _audit_append({
         "ts": ts,
         "server_id": server_id,
@@ -929,6 +1020,7 @@ def api_server_action(server_id: str):
         "endpoint": endpoint,
         "action": action,
         "request_id": request_id,
+        "operator_id": operator_id,
         "upstream_code": code,
         "upstream_state": upstream_state,
         "upstream_result": upstream_result,
@@ -971,6 +1063,44 @@ def api_server_action_status(server_id: str, request_id: str):
         502,
     )
 
+
+
+
+
+@app.route('/api/audit')
+def api_audit():
+    if not _authorized():
+        return (jsonify({"ok": False, "error": "unauthorized"}), 401)
+    try:
+        limit = int(request.args.get('limit') or '200')
+    except Exception:
+        limit = 200
+    return jsonify({"ok": True, "ts": _utc_ts(), "audit": _audit_tail(limit=limit)})
+
+
+@app.route('/api/export')
+def api_export():
+    if not _authorized():
+        return (jsonify({"ok": False, "error": "unauthorized"}), 401)
+
+    # Prefer whichever pins backend is active.
+    pins: list = []
+    try:
+        if _pins_remote_enabled():
+            code, data = _http_json(f"{PINS_REMOTE_URL}/api/pins", method='GET', headers=_pins_remote_headers(), timeout=6.0)
+            if code and 200 <= code < 300 and isinstance(data, dict):
+                pins = data.get('pins') or []
+        else:
+            pins = (_pins_read().get('pins') or [])
+    except Exception:
+        pins = []
+
+    return jsonify({
+        "ok": True,
+        "ts": _utc_ts(),
+        "pins": pins,
+        "audit": _audit_tail(limit=400),
+    })
 
 @app.route("/api/pins", methods=["GET", "POST"])
 def api_pins():
