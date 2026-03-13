@@ -16,6 +16,7 @@ Primary API surface:
 - `GET /` → HTML dashboard
 - `GET /api/servers` → server inventory
 - `GET /api/fleet` → fleet status rollup (polls each server in parallel)
+  - Optional: `GET /api/fleet?zone=home|all|<zone>` to reduce polling to a single zone.
 - `POST /api/server/<id>/action` body `{ "action": "start|stop|restart" }` → proxies to the server
 - `GET /api/pins` → list pins
 - `POST /api/pins` body `{ "title": "...", "body": "..." }` → create pin (defaults to pinned=true)
@@ -104,7 +105,7 @@ The remote service is expected to expose the same endpoints as this dashboard:
 
 If multiple operators open the dashboard, the `GET /api/fleet` endpoint can cause a burst of polls.
 
-- `OPS_FLEET_CACHE_S=5` (default) caches the whole fleet response in-memory for N seconds.
+- `OPS_FLEET_CACHE_S=5` (default) caches the fleet response in-memory for N seconds (cache is keyed by `?zone=`).
 - Set to `0` to disable caching.
 
 ### Audit log

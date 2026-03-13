@@ -52,8 +52,9 @@ PINS_REMOTE_TOKEN = (os.getenv("OPS_PINS_REMOTE_TOKEN", "") or "").strip()
 AUDIT_FILE = os.getenv("OPS_AUDIT_FILE", "/tmp/jambetter_ops_audit.jsonl")
 
 # Fleet polling cache (reduces load if multiple operators open the dashboard).
+# Cache is keyed by requested zone filter to avoid surprising cross-zone mixing.
 FLEET_CACHE_S = float(os.getenv("OPS_FLEET_CACHE_S", "5"))
-_FLEET_CACHE: dict[str, Any] = {"ts": 0.0, "payload": None}
+_FLEET_CACHE: dict[str, dict[str, Any]] = {}
 
 HTML = """
 <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -234,7 +235,8 @@ function setTab(tabId){
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>setTab(t.dataset.tab)));
 
 async function loadFleet(){
-  const r=await fetch('/api/fleet', {headers: authHeaders()});
+  const zoneFilter = (document.getElementById('zoneFilter')||{}).value || (localStorage.getItem(LS_ZONE) || 'home');
+  const r=await fetch('/api/fleet?zone=' + encodeURIComponent(zoneFilter), {headers: authHeaders()});
   const d=await r.json();
   const s=d.summary||{};
   document.getElementById('top').innerHTML = `
@@ -243,8 +245,8 @@ async function loadFleet(){
     <div class='card'>Alerts<br><b>${s.alerts||0}</b></div>
   `;
 
-  const zoneFilter = (document.getElementById('zoneFilter')||{}).value || (localStorage.getItem(LS_ZONE) || 'home');
   const crossEnabled = ((document.getElementById('crossZoneCtrl')||{}).checked) || ((localStorage.getItem(LS_CROSS) || '0')==='1');
+  // Note: server already applies the zone filter; client filtering remains as a safety net.
   const rows=(d.servers||[]).filter(x=>{
     const z = x.zone || (x.inventory && x.inventory.zone) || HOME_ZONE;
     if(zoneFilter==='all') return true;
@@ -664,19 +666,26 @@ def api_fleet():
     if not _authorized():
         return (jsonify({"ok": False, "error": "unauthorized"}), 401)
 
+    zone = (request.args.get("zone") or "all").strip()
+    # Treat home as a first-class selector; any other string is matched literally.
+
     # Cache whole-fleet responses briefly to avoid thundering herds when
     # multiple operators have the page open.
     now_s = datetime.now(timezone.utc).timestamp()
+    cache_key = f"zone:{zone or 'all'}"
+    cached = _FLEET_CACHE.get(cache_key) or {}
     try:
-        cached_ts = float(_FLEET_CACHE.get("ts") or 0.0)
+        cached_ts = float(cached.get("ts") or 0.0)
     except Exception:
         cached_ts = 0.0
     if FLEET_CACHE_S > 0 and (now_s - cached_ts) <= FLEET_CACHE_S:
-        payload = _FLEET_CACHE.get("payload")
+        payload = cached.get("payload")
         if isinstance(payload, dict):
             return jsonify(payload)
 
     servers = _load_servers()
+    if zone and zone != "all":
+        servers = [s for s in servers if (s.get("zone") or "home") == zone]
 
     # Poll in parallel to keep UI snappy as fleet size grows.
     out: list[dict] = []
@@ -733,8 +742,7 @@ def api_fleet():
         "cache": {"ttl_s": FLEET_CACHE_S, "generated_at": _utc_ts()},
     }
 
-    _FLEET_CACHE["ts"] = now_s
-    _FLEET_CACHE["payload"] = payload
+    _FLEET_CACHE[cache_key] = {"ts": now_s, "payload": payload}
 
     return jsonify(payload)
 
