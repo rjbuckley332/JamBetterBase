@@ -122,6 +122,18 @@ Action proxy calls (start/stop/restart) are logged best-effort to a local append
 - `JAMBETTER_HEALTH_SCRIPT=/home/nds/healthcheck.py` (default)
 - `JAMBETTER_HEALTH_JSON=/tmp/jambetter_health.json` (default)
 
+## Inventory validation (preflight)
+
+Before pointing the dashboard at a new or edited `ops_servers.json`, you can run a quick preflight checker:
+
+```bash
+python3 ops/inventory_check.py --servers ops_servers.json
+# optional (may trigger real actions on misconfigured servers):
+python3 ops/inventory_check.py --servers ops_servers.json --check-control
+```
+
+It validates the inventory format and probes each server’s status endpoint (prefers `/ops/status`).
+
 ## Running locally
 
 ```bash
