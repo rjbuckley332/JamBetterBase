@@ -16,9 +16,20 @@ inv = json.load(open(inv_path))
 servers = inv.get("servers", [])
 repo = inv.get("repo", "/home/nds")
 services = inv.get("services", [])
+defaults = inv.get("defaults", {}) if isinstance(inv.get("defaults"), dict) else {}
 
 if not servers:
     raise SystemExit("No servers in inventory")
+
+# Apply inventory defaults (shallow) so operators can set common fields once.
+merged_servers = []
+for s in servers:
+    if not isinstance(s, dict):
+        continue
+    m = dict(defaults)
+    m.update(s)
+    merged_servers.append(m)
+servers = merged_servers
 
 canary = next((s for s in servers if s.get("canary")), servers[0])
 others = [s for s in servers if s is not canary]
@@ -41,14 +52,49 @@ def run_local(args):
 
 def fqdn_for_server(s):
     if s.get("fqdn"):
-        return s["fqdn"].strip()
-    url = s.get("health_url", "").strip()
+        return str(s["fqdn"]).strip()
+    url = str(s.get("health_url", "")).strip()
     if not url:
         return ""
     try:
         return (urllib.parse.urlparse(url).hostname or "").strip()
     except Exception:
         return ""
+
+
+def ensure_dns(s):
+    """Best-effort Cloudflare DNS upsert.
+
+    If CF_API_TOKEN is set and we can determine a FQDN, we upsert an A record
+    to the server's current ssh_host (public IPv4).
+
+    This keeps first-time deployments from failing due to missing DNS.
+    """
+    fqdn = fqdn_for_server(s)
+    ip = str(s.get("ssh_host") or "").strip()
+    if not fqdn or not ip:
+        return True
+
+    token = os.environ.get("CF_API_TOKEN", "").strip()
+    if not token:
+        # DNS upsert is optional; skip if not configured.
+        return True
+
+    proxied = str(s.get("dns_proxied", "false")).strip().lower() in ("1", "true", "yes")
+    script = os.path.join(os.path.dirname(__file__), "cloudflare_dns_upsert.py")
+    if not os.path.exists(script):
+        print("  DNS upsert script not found; skipping")
+        return True
+
+    print(f"  ensure dns: {fqdn} -> {ip} (proxied={proxied})")
+    if dry_run:
+        return True
+
+    rc, out, err = run_local([sys.executable, script, fqdn, ip, "true" if proxied else "false"])
+    if rc != 0:
+        print("  dns upsert failed:", (err or out).strip())
+        return False
+    return True
 
 
 def ensure_s3_bucket(s):
@@ -164,6 +210,10 @@ def deploy_and_gate(s):
     env_overrides = build_env_overrides(s)
     if env_overrides:
         print("  env overrides:", ", ".join(sorted(env_overrides.keys())))
+
+    if not ensure_dns(s):
+      print("DNS preflight failed")
+      return False
 
     if not ensure_s3_bucket(s):
       print("S3 bucket preflight failed")

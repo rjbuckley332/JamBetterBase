@@ -63,11 +63,29 @@ Create/update customer record:
 - Last argument (`false`) means **DNS only** (recommended until cert is stable).
 - Use `true` only when you intentionally want Cloudflare proxy.
 
-## DNS is now required in rollout
+## DNS upsert (optional, but recommended)
 
- now performs Cloudflare DNS upsert for each server before deploy.
-Set these env vars in the shell running rollout:
+`canary_rollout.py` will **best-effort** upsert a Cloudflare A record for each server *before* deploying,
+so first-time deployments don't fail due to missing DNS.
 
+It runs only when:
+- the server has a `fqdn` (or a `health_url` from which a hostname can be derived), AND
+- `CF_API_TOKEN` is set in the environment.
 
+Env vars:
+```bash
+export CF_API_TOKEN="<token-with-DNS-edit-permission>"
+# Optional (defaults to jambetter.music)
+export CF_ZONE_NAME="jambetter.music"
+# Optional (auto-discovered if Zone:Read is permitted)
+export CF_ZONE_ID="<cloudflare-zone-id>"
+```
 
-Inventory may optionally include ; otherwise  is used as DNS target.
+Inventory fields:
+- `fqdn` (recommended) — the full hostname to upsert
+- `ssh_host` — used as the IPv4 target for the A record
+- `dns_proxied` (optional, default false) — whether Cloudflare proxy should be enabled
+
+Notes:
+- If `CF_API_TOKEN` is not set, DNS upsert is skipped.
+- If DNS upsert fails, rollout stops (to avoid deploying to a host that operators can't reach by name).
