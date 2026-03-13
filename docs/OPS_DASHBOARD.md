@@ -84,9 +84,19 @@ If `jamulus.service.state` is present, the dashboard renders it in the **Jamulus
 
 ### Pins storage
 
-Pins are file-backed (JSON) for now.
+Pins are file-backed (JSON) by default.
 
 - `OPS_PINS_FILE=/tmp/jambetter_ops_pins.json` (default)
+
+Optional remote backend (e.g. Cloudflare Worker backed by D1):
+
+- `OPS_PINS_REMOTE_URL=https://your-pins-service.example.com` (when set, pins are proxied to this service)
+- `OPS_PINS_REMOTE_TOKEN=...` (sent as `X-Ops-Token` to the remote pins service)
+
+The remote service is expected to expose the same endpoints as this dashboard:
+- `GET/POST  /api/pins`
+- `POST     /api/pins/<pin_id>/pin`
+- `DELETE   /api/pins/<pin_id>`
 
 ### Audit log
 

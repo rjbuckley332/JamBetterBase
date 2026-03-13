@@ -44,6 +44,11 @@ SERVERS_FILE = os.getenv(
 )
 
 PINS_FILE = os.getenv("OPS_PINS_FILE", "/tmp/jambetter_ops_pins.json")
+# Optional remote pins backend (e.g. a Cloudflare Worker backed by D1).
+# If set, the dashboard will proxy pin reads/writes to that service.
+PINS_REMOTE_URL = (os.getenv("OPS_PINS_REMOTE_URL", "") or "").strip().rstrip("/")
+PINS_REMOTE_TOKEN = (os.getenv("OPS_PINS_REMOTE_TOKEN", "") or "").strip()
+
 AUDIT_FILE = os.getenv("OPS_AUDIT_FILE", "/tmp/jambetter_ops_audit.jsonl")
 
 HTML = """
@@ -509,7 +514,20 @@ def _poll_server(entry: dict) -> dict:
     return {"id": sid, "name": name, "zone": entry.get("zone"), "tags": entry.get("tags") or [], "ok": False, "error": last_err or "unreachable"}
 
 
-# --- pins (D1-style read/pin API, file-backed for now) ---
+# --- pins (D1-style read/pin API, file-backed or remote) ---
+
+def _pins_remote_enabled() -> bool:
+    return bool(PINS_REMOTE_URL)
+
+
+def _pins_remote_headers() -> dict[str, str]:
+    # Keep token semantics simple: allow a dedicated token for the remote pins service.
+    # (We use X-Ops-Token to match other JamBetter ops surfaces.)
+    hdrs: dict[str, str] = {}
+    if PINS_REMOTE_TOKEN:
+        hdrs["X-Ops-Token"] = PINS_REMOTE_TOKEN
+    return hdrs
+
 
 def _pins_read() -> dict:
     try:
@@ -748,6 +766,22 @@ def api_pins():
     if not _authorized():
         return (jsonify({"ok": False, "error": "unauthorized"}), 401)
 
+    # If configured, proxy to a remote pins service (e.g. Cloudflare Worker + D1).
+    if _pins_remote_enabled():
+        endpoint = f"{PINS_REMOTE_URL}/api/pins"
+        if request.method == "GET":
+            code, data = _http_json(endpoint, method="GET", headers=_pins_remote_headers(), timeout=6.0)
+            if code and 200 <= code < 300 and isinstance(data, dict):
+                return jsonify(data)
+            return (jsonify({"ok": False, "error": "pins backend unreachable", "upstream_code": code, "upstream": data}), 502)
+
+        d = request.get_json(silent=True) or {}
+        code, data = _http_json(endpoint, method="POST", headers=_pins_remote_headers(), payload=d, timeout=6.0)
+        if code and 200 <= code < 300 and isinstance(data, dict):
+            return jsonify(data)
+        return (jsonify({"ok": False, "error": "pins backend write failed", "upstream_code": code, "upstream": data}), 502)
+
+    # Local file-backed implementation.
     if request.method == "GET":
         pins = _pins_read().get("pins") or []
         # pinned first, newest first
@@ -781,6 +815,13 @@ def api_pins_pin(pin_id: str):
     d = request.get_json(silent=True) or {}
     pinned = bool(d.get("pinned"))
 
+    if _pins_remote_enabled():
+        endpoint = f"{PINS_REMOTE_URL}/api/pins/{urllib.parse.quote(str(pin_id))}/pin"
+        code, data = _http_json(endpoint, method="POST", headers=_pins_remote_headers(), payload={"pinned": pinned}, timeout=6.0)
+        if code and 200 <= code < 300 and isinstance(data, dict):
+            return jsonify(data)
+        return (jsonify({"ok": False, "error": "pins backend write failed", "upstream_code": code, "upstream": data}), 502)
+
     pins = _pins_read().get("pins") or []
     for p in pins:
         if p.get("id") == pin_id:
@@ -794,6 +835,13 @@ def api_pins_pin(pin_id: str):
 def api_pins_delete(pin_id: str):
     if not _authorized():
         return (jsonify({"ok": False, "error": "unauthorized"}), 401)
+
+    if _pins_remote_enabled():
+        endpoint = f"{PINS_REMOTE_URL}/api/pins/{urllib.parse.quote(str(pin_id))}"
+        code, data = _http_json(endpoint, method="DELETE", headers=_pins_remote_headers(), timeout=6.0)
+        if code and 200 <= code < 300 and isinstance(data, dict):
+            return jsonify(data)
+        return (jsonify({"ok": False, "error": "pins backend delete failed", "upstream_code": code, "upstream": data}), 502)
 
     pins = _pins_read().get("pins") or []
     kept = [p for p in pins if p.get("id") != pin_id]
