@@ -517,7 +517,34 @@ def _fqdn_label(url: str) -> str:
         return ""
 
 
-def _http_json(url: str, *, method: str = "GET", headers: dict | None = None, payload: dict | None = None, timeout: float = 4.0) -> tuple[int, dict]:
+def _http_json(
+    url: str,
+    *,
+    method: str = "GET",
+    headers: dict | None = None,
+    payload: dict | None = None,
+    timeout: float = 4.0,
+) -> tuple[int, dict]:
+    """Best-effort JSON fetch.
+
+    Fleet polling sometimes hits misconfigured endpoints (HTML landing pages,
+    reverse-proxy error pages, etc.). In those cases we still want:
+      - the HTTP status code, and
+      - a readable error for operators,
+    rather than treating it as a socket failure.
+    """
+
+    def _parse_body(body: str) -> dict:
+        body = (body or "").strip()
+        if not body:
+            return {}
+        try:
+            v = json.loads(body)
+        except Exception:
+            # Keep a small preview for debugging in the UI/logs.
+            return {"error": "non-json response", "raw": body[:4000]}
+        return v if isinstance(v, dict) else {"ok": True, "data": v}
+
     data = None
     hdrs = {"Accept": "application/json"}
     if headers:
@@ -525,15 +552,16 @@ def _http_json(url: str, *, method: str = "GET", headers: dict | None = None, pa
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         hdrs["Content-Type"] = "application/json"
+
     req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read().decode("utf-8", errors="ignore")
-            return r.getcode(), (json.loads(body) if body else {})
+            return r.getcode(), _parse_body(body)
     except urllib.error.HTTPError as e:
         try:
             body = e.read().decode("utf-8", errors="ignore")
-            return e.code, (json.loads(body) if body else {"error": body})
+            return e.code, _parse_body(body)
         except Exception:
             return e.code, {"error": str(e)}
     except Exception as e:
