@@ -275,6 +275,17 @@ function setTab(tabId){
   ['fleetTab','serversTab','pinsTab','auditTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
 }
 
+function setTagFilter(tag){
+  const t = String(tag||'').trim();
+  const el = document.getElementById('tagFilter');
+  if(el) el.value = t;
+  localStorage.setItem(LS_TAG, t);
+  // ensure we're on the fleet tab so the operator sees the effect immediately
+  setTab('fleetTab');
+  loadFleet();
+  return false;
+}
+
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>setTab(t.dataset.tab)));
 
 async function loadFleet(){
@@ -304,9 +315,14 @@ async function loadFleet(){
     const detailHref = sid ? (`/server/${encodeURIComponent(sid)}` + (OPS_TOKEN ? (`?token=${encodeURIComponent(OPS_TOKEN)}`) : '')) : '';
     const nameCell = sid ? (`<a href='${detailHref}'>${String(name).replaceAll('<','&lt;')}</a>`) : String(name).replaceAll('<','&lt;');
     const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
-    const tags = (x.tags || (x.inventory && x.inventory.tags) || []).map(t=>String(t)).join(', ');
+    const tagList = (x.tags || (x.inventory && x.inventory.tags) || []).map(t=>String(t)).filter(Boolean);
+    const tagsText = tagList.join(', ');
+    const tagsHtml = tagList.length ? tagList.map(t=>{
+      const esc = t.replaceAll('<','&lt;');
+      return `<a href='#' class='small' onclick='return setTagFilter(${JSON.stringify(t)})'>${esc}</a>`;
+    }).join(', ') : `<span class='small'>-</span>`;
     if(!x.ok){
-      return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+      return `<tr><td>${nameCell}</td><td>${zone}</td><td>${tagsHtml}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
         <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -327,7 +343,7 @@ async function loadFleet(){
     const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${nameCell}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}${staleLabel}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+    return `<tr><td>${nameCell}</td><td>${zone}</td><td>${tagsHtml}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}${staleLabel}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
       <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] || (cooldown[sid] && Date.now()<cooldown[sid]) ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
