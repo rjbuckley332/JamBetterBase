@@ -84,6 +84,7 @@ textarea{min-height:90px}
 
 <div class='tabs'>
   <button class='tab active' data-tab='fleetTab'>Fleet</button>
+  <button class='tab' data-tab='serversTab'>Servers</button>
   <button class='tab' data-tab='pinsTab'>Pins</button>
   <button class='tab' data-tab='healthTab'>Health</button>
 </div>
@@ -109,9 +110,19 @@ textarea{min-height:90px}
   </div>
   <div class='card'>
     <table>
-      <thead><tr><th>Server</th><th>Zone</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Last seen</th><th>Reachability</th><th>Last action</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Server</th><th>Zone</th><th>Tags</th><th>Jamulus</th><th>Quality</th><th>Load</th><th>Disk</th><th>Last seen</th><th>Reachability</th><th>Last action</th><th>Actions</th></tr></thead>
       <tbody id='fleet'></tbody>
     </table>
+  </div>
+</div>
+
+<div id='serversTab' class='hidden'>
+  <div class='card'>
+    <div style='display:flex; gap:10px; flex-wrap:wrap; align-items:center'>
+      <button class='btn' onclick='loadServers()'>Refresh server inventory</button>
+      <div class='small'>Shows <code>GET /api/servers</code>. This is what the Fleet tab uses as its inventory source.</div>
+    </div>
+    <pre id='serversOut' style='white-space:pre-wrap; margin-top:10px'></pre>
   </div>
 </div>
 
@@ -217,7 +228,7 @@ async function loadZones(){
 
 function setTab(tabId){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tabId));
-  ['fleetTab','pinsTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
+  ['fleetTab','serversTab','pinsTab','healthTab'].forEach(id=>document.getElementById(id).classList.toggle('hidden', id!==tabId));
 }
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>setTab(t.dataset.tab)));
@@ -243,8 +254,9 @@ async function loadFleet(){
     const name = x.name || x.id || 'unknown';
     const sid = x.id || '';
     const zone = x.zone || (x.inventory && x.inventory.zone) || '-';
+    const tags = (x.tags || (x.inventory && x.inventory.tags) || []).map(t=>String(t)).join(', ');
     if(!x.ok){
-      return `<tr><td>${name}</td><td>${zone}</td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+      return `<tr><td>${name}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b('gray','Unknown')}</td><td>${b('gray','Unknown')}</td><td>-</td><td>-</td><td>-</td><td>❌ ${x.error||'unreachable'}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
         <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
@@ -257,12 +269,12 @@ async function loadFleet(){
     const svcState = (((x.data.jamulus||{}).service||{}).state || 'unknown');
     const svcColor = (svcState==='active') ? 'green' : (svcState==='failed' ? 'red' : (svcState==='inactive' ? 'gray' : 'gray'));
     const reach = x.ok ? '✅ ok' : '❌';
-    return `<tr><td>${name}</td><td>${zone}</td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
+    return `<tr><td>${name}</td><td>${zone}</td><td><span class='small'>${(tags||'-').replaceAll('<','&lt;')}</span></td><td>${b(svcColor, svcState)}</td><td>${b(q.grade||'gray', q.label||'Unknown')}</td><td>${L.load1 ?? '-'} / ${L.cores ?? '-'}</td><td>${D.used_pct ?? '-'}%</td><td><span class='small'>${lastSeen}</span></td><td>${reach}</td><td>${lastActionCell(x.last_action)}</td><td>${sid?`
       <button class='btn' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","start")'>Start</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","stop")'>Stop</button>
       <button class='btn danger' ${(!crossEnabled && zone!==HOME_ZONE) || inFlight[sid] ? 'disabled' : ''} onclick='serverAction("${sid}","restart")'>Restart</button>
     `:''}</td></tr>`;
-  }).join('') || '<tr><td colspan="10">No servers configured</td></tr>';
+  }).join('') || '<tr><td colspan="11">No servers configured</td></tr>';
 
   document.getElementById('fleet').innerHTML = rows;
   document.getElementById('stamp').textContent = 'Updated: ' + (d.ts || new Date().toISOString());
@@ -358,6 +370,12 @@ async function deletePin(id){
   await loadPins();
 }
 
+async function loadServers(){
+  const r=await fetch('/api/servers', {headers: authHeaders()});
+  const d=await r.json();
+  document.getElementById('serversOut').textContent = JSON.stringify(d, null, 2);
+}
+
 async function loadHealth(){
   const r=await fetch('/health', {headers: authHeaders()});
   const d=await r.json();
@@ -367,6 +385,7 @@ async function loadHealth(){
 initZoneControls();
 loadZones();
 loadFleet();
+loadServers();
 loadPins();
 setInterval(loadFleet, 15000);
 </script></body></html>

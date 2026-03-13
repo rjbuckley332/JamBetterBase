@@ -8,6 +8,7 @@ The dashboard is implemented in `ops_dashboard_app.py` (Flask) and is meant to r
 
 Tabs:
 - **Fleet**: inventory + status rollup (polls each server)
+- **Servers**: raw inventory view (shows `GET /api/servers` output)
 - **Pins**: lightweight operator notes (file-backed for now)
 - **Health**: runs `healthcheck.py` and renders `/tmp/jambetter_health.json`
 
