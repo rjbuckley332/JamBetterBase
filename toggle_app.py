@@ -1578,14 +1578,15 @@ if __name__ == "__main__":
 @app.route('/wav/restart', methods=['POST'])
 def wav_restart():
     ok, resp = _require_passcode()
-    if not ok: return resp
+    if not ok:
+        return resp
     # Restart current playback on trackbot
     url = f"{TRACKBOT_BASE_URL}/api/restart"
     code, body = _http_get(url, timeout=5.0)
     try:
-        data = json.loads(body) if body else {ok: False}
+        data = json.loads(body) if body else {"ok": False}
     except Exception:
-        data = {ok: False, error: body}
+        data = {"ok": False, "error": body}
     if code and 200 <= code < 300:
         return jsonify(data)
-    return jsonify({ok: False, upstream_code: code, upstream: data}), 502
+    return jsonify({"ok": False, "upstream_code": code, "upstream": data}), 502

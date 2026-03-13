@@ -158,6 +158,9 @@ Those endpoints must exist on each server (or you’ll see upstream 404/502 erro
 
 Notes:
 - The dashboard forwards `X-Request-Id` (if provided) to the server to support idempotency/correlation.
+- If the server supports async/long-running orchestration, it can expose:
+  - `GET <serverBaseUrl>/api/jamulus/action/<request_id>`
+  The dashboard will poll this briefly when an action returns `accepted`/`in_progress`.
 
 ---
 
