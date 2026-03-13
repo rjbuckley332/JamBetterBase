@@ -528,8 +528,10 @@ def _poll_server(entry: dict) -> dict:
 
     # Prefer a stable server-side status API.
     candidates = [
-        url.rstrip("/") + "/api/support/status",
+        # Prefer the stable ops schema first.
         url.rstrip("/") + "/ops/status",
+        # Back-compat (older servers exposed support/status only).
+        url.rstrip("/") + "/api/support/status",
         url.rstrip("/") + "/status",
         url.rstrip("/") + "/",
     ]
