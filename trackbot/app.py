@@ -262,8 +262,10 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
             out += int(vv).to_bytes(2, 'little', signed=True)
         return bytes(out)
 
-    strong = scale_pcm16(strong, gain)
-    weak = scale_pcm16(weak, gain)
+    # Make the downbeat more obvious (esp. for compound meters like 6/8):
+    # keep strong at full requested volume, pull weak back a bit.
+    strong = scale_pcm16(strong, gain * 1.00)
+    weak = scale_pcm16(weak, gain * 0.55)
 
     click_len = min(len(strong)//2, len(weak)//2, unit_samples)
     strong = strong[:click_len*2]
