@@ -332,3 +332,30 @@ RESEND_API_KEY                   # Welcome email sending
 6. Verify D1 / webhook state reflects the refund/nonpayment
 7. Confirm email notice, DNS, booking, and runtime cleanup are complete
 8. **TODO:** automate this classification + grace-period + teardown flow safely
+
+### Suggested billing / lifecycle state machine
+
+Use a simple explicit state model so refund and nonpayment handling is deterministic:
+
+| State | Meaning | Trigger in | Trigger out / next state |
+|------|---------|------------|---------------------------|
+| `active` | Customer is paid and service is live | Successful checkout / recovered payment | Nonpayment notice → `past_due_notified`; refund/cancel confirmed → `teardown_pending` |
+| `past_due_notified` | First nonpayment notice has been sent | First Stripe nonpayment signal | Start grace timer → `grace_period`; payment received → `active` |
+| `grace_period` | Customer has up to 30 days to recover payment | Nonpayment notice logged and grace period started | Payment received → `paid_recovered`; 30 days expire unpaid → `teardown_pending` |
+| `paid_recovered` | Customer paid during grace period | Stripe payment recovered during grace period | Return service to normal → `active` |
+| `teardown_pending` | Removal approved / due, but teardown not yet finished | Refund/cancel confirmed or grace period expired | Cleanup run starts/finishes → `removed` |
+| `removed` | DNS/booking/runtime resources have been removed | Teardown complete | New purchase would start fresh provisioning flow |
+
+### State handling notes
+- `refund` and `hard cancellation` can move directly to `teardown_pending` once the target slug is confirmed.
+- `nonpayment` should move to `past_due_notified` first, with the first email sent immediately.
+- The system should persist at least:
+  - `slug`
+  - `hosting_model` (`dedicated` or `shared_tenant`)
+  - `host_id` / server identity
+  - `first_nonpayment_at`
+  - `grace_expires_at`
+  - `teardown_started_at`
+  - `removed_at`
+- Shared-tenant teardown should include a guard for `last tenant on host` before deleting anything beyond the tenant itself.
+- Any recovered payment during the 30-day grace period should explicitly cancel pending removal work and return the customer to `active`.
