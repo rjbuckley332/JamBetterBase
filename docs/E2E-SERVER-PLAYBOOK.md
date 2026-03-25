@@ -303,8 +303,24 @@ RESEND_API_KEY                   # Welcome email sending
 2. Verify all checklist items in `DEPLOYMENT-CHECKLIST.md`
 3. Check ops dashboard for health status
 
-### Refund path (manual):
-1. Process refund in Stripe
-2. D1 status updates automatically via refund webhook
-3. **Manual:** tear down GCP instance, remove DNS, remove booking mapping
-4. **TODO:** automate teardown on refund
+### Refund / nonpayment path (manual classification first)
+1. Receive Stripe refund / cancellation / nonpayment signal
+2. Identify the customer slug from Stripe metadata / checkout / booking records
+3. **Classify the slug before deleting anything:**
+   - Search for the slug/hostname and determine whether it is a **dedicated server** or a **shared tenant on an MT host**
+   - Confirm the exact live hostname (for example `testing.jambetter.music` vs `jb-testing.jambetter.music`)
+4. Branch by hosting model:
+   - **Dedicated server:** full teardown path
+     - remove booking mapping / support PIN
+     - remove Cloudflare DNS record(s)
+     - stop and delete the dedicated GCP instance/server
+     - remove any dedicated storage/config artifacts tied to that server
+   - **Shared tenant:** tenant-only teardown path
+     - if it is **not the last tenant on the host**, delete only that slug's tenant components
+       - tenant service units/config
+       - tenant temp/storage paths
+       - tenant routing/DNS/booking records
+     - if it **is the last tenant**, pause and evaluate whether the whole host should also be retired instead of doing a partial cleanup
+5. Verify D1 / webhook state reflects the refund/nonpayment
+6. Confirm DNS, booking, and runtime cleanup are complete
+7. **TODO:** automate this classification + teardown flow safely
