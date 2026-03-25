@@ -309,7 +309,15 @@ RESEND_API_KEY                   # Welcome email sending
 3. **Classify the slug before deleting anything:**
    - Search for the slug/hostname and determine whether it is a **dedicated server** or a **shared tenant on an MT host**
    - Confirm the exact live hostname (for example `testing.jambetter.music` vs `jb-testing.jambetter.music`)
-4. Branch by hosting model:
+4. Branch first by event type:
+   - **Refund / hard cancellation:** proceed to teardown workflow immediately after confirmation
+   - **Nonpayment:** do **not** remove immediately
+     - send an email to the customer/tenant on the **first nonpayment notification**
+     - start a **30-day grace period** to give them a chance to pay
+     - record the nonpayment notice date and planned removal date
+     - if payment is received during the grace period, cancel the removal workflow
+     - if still unpaid after 30 days, continue to the teardown workflow below
+5. Branch by hosting model when teardown is actually required:
    - **Dedicated server:** full teardown path
      - remove booking mapping / support PIN
      - remove Cloudflare DNS record(s)
@@ -321,6 +329,6 @@ RESEND_API_KEY                   # Welcome email sending
        - tenant temp/storage paths
        - tenant routing/DNS/booking records
      - if it **is the last tenant**, pause and evaluate whether the whole host should also be retired instead of doing a partial cleanup
-5. Verify D1 / webhook state reflects the refund/nonpayment
-6. Confirm DNS, booking, and runtime cleanup are complete
-7. **TODO:** automate this classification + teardown flow safely
+6. Verify D1 / webhook state reflects the refund/nonpayment
+7. Confirm email notice, DNS, booking, and runtime cleanup are complete
+8. **TODO:** automate this classification + grace-period + teardown flow safely
