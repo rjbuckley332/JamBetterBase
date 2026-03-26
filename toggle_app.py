@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify, render_template, make_response, session, redirect, send_file
-import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile, shutil
+import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile, shutil, re
 import fcntl
 import boto3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import urllib.parse
+import urllib.request
 import uuid as uuidlib
 
 # ---------- TIMEZONE ----------
@@ -32,6 +33,8 @@ app.secret_key = os.getenv("WEB_SESSION_SECRET") or "b0d4488ec7feed6053da40a8165
 # ---------- Auto-restart on silence state ----------
 _auto_restart_state = {"enabled": False, "silence_seconds": 6}
 _support_sessions: dict[str, dict] = {}
+_support_faq_cache: dict[str, object] = {'mtime': None, 'data': None}
+_support_first_recording_cache: dict[str, object] = {'checked_at': 0.0, 'value': None}
 
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
@@ -96,6 +99,13 @@ LIBRARY_AWS_REGION = os.getenv('LIBRARY_AWS_REGION', 'us-east-1')
 TRACKBOT_BASE_URL = os.getenv("TRACKBOT_BASE_URL", "http://172.16.31.3:8088").rstrip("/")
 TRACKBOT_QUEUE_FILE = os.getenv("TRACKBOT_QUEUE_FILE", "/tmp/trackbot_queue.json")
 SUPPORT_BOT_URL = os.getenv("SUPPORT_BOT_URL", "https://t.me/JamBetterBot").strip()
+SUPPORT_WELCOME_DAYS = int(os.getenv("SUPPORT_WELCOME_DAYS", "6"))
+SUPPORT_WELCOME_PHONE = (os.getenv("SUPPORT_WELCOME_PHONE", "") or "").strip()
+SUPPORT_WELCOME_PIN = (os.getenv("SUPPORT_WELCOME_PIN", "") or "").strip()
+SUPPORT_EMAIL_TO = (os.getenv("SUPPORT_EMAIL_TO", "") or "").strip()
+SUPPORT_EMAIL_BCC = (os.getenv("SUPPORT_EMAIL_BCC", "rbuckley@reachhigher.ai") or "").strip()
+SUPPORT_EMAIL_FROM = (os.getenv("SUPPORT_EMAIL_FROM", "JamBetter Support <support@jambetter.music>") or "").strip()
+RESEND_API_KEY = (os.getenv("RESEND_API_KEY", "") or "").strip()
 
 
 def create_app():
@@ -660,6 +670,201 @@ def metronome_status():
     return jsonify({"ok": False, "upstream_code": code, "upstream": data}), 502
 
 
+def _support_parse_dt(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def _support_iso(dt):
+    if not dt:
+        return None
+    if getattr(dt, 'tzinfo', None) is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _support_load_faq() -> dict:
+    path = os.path.join(BASE_DIR, 'static', 'support-faq.json')
+    try:
+        mtime = os.path.getmtime(path)
+    except Exception:
+        return {'version': 0, 'categories': []}
+    if _support_faq_cache.get('data') is not None and _support_faq_cache.get('mtime') == mtime:
+        return _support_faq_cache['data']
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {'version': 0, 'categories': []}
+    _support_faq_cache['mtime'] = mtime
+    _support_faq_cache['data'] = data
+    return data
+
+
+def _support_match_faq(text: str) -> dict | None:
+    query = (text or '').strip().lower()
+    if not query:
+        return None
+    q_tokens = [t for t in re.findall(r'[a-z0-9]+', query) if len(t) > 1]
+    if not q_tokens:
+        return None
+    best = None
+    best_score = 0
+    for cat in (_support_load_faq().get('categories') or []):
+        for item in (cat.get('questions') or []):
+            hay = ' '.join([
+                item.get('q') or '',
+                item.get('a') or '',
+                ' '.join(item.get('tags') or []),
+                cat.get('title') or '',
+                cat.get('id') or '',
+            ]).lower()
+            score = 0
+            for tok in q_tokens:
+                if tok in hay:
+                    score += 1
+                    if tok in ' '.join((item.get('tags') or [])).lower():
+                        score += 2
+                    if tok in (item.get('q') or '').lower():
+                        score += 2
+            if query in hay:
+                score += 4
+            if score > best_score:
+                best_score = score
+                best = {
+                    'category_id': cat.get('id'),
+                    'category_title': cat.get('title'),
+                    'question': item.get('q'),
+                    'answer': item.get('a'),
+                    'tags': item.get('tags') or [],
+                    'score': score,
+                }
+    return best if best_score >= 2 else None
+
+
+def _support_first_recording_dt() -> datetime | None:
+    now = time.time()
+    cached = _support_first_recording_cache.get('value')
+    if cached is not None and (now - float(_support_first_recording_cache.get('checked_at') or 0.0)) < 900:
+        return cached
+
+    earliest = None
+
+    # Prefer authoritative S3 history for tenant age.
+    prefix = f"vps/{LIBRARY_VPS_ID}/recordings/"
+    try:
+        s3 = boto3.client('s3', region_name=LIBRARY_AWS_REGION)
+        paginator = s3.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=LIBRARY_S3_BUCKET, Prefix=prefix):
+            for obj in (page.get('Contents') or []):
+                key = obj.get('Key') or ''
+                if not key or key.endswith('/'):
+                    continue
+                rel = key[len(prefix):] if key.startswith(prefix) else key
+                if rel.startswith('temp/') or rel.startswith('.archived/'):
+                    continue
+                lm = obj.get('LastModified')
+                if lm and (earliest is None or lm < earliest):
+                    earliest = lm
+    except Exception:
+        pass
+
+    # Fallback to local recording directory if S3 is unavailable.
+    if earliest is None:
+        try:
+            for root, dirs, files in os.walk(RECORDINGS_DIR):
+                dirs[:] = [d for d in dirs if d not in ('temp', '.archived')]
+                for fn in files:
+                    p = os.path.join(root, fn)
+                    try:
+                        dt = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc)
+                    except Exception:
+                        continue
+                    if earliest is None or dt < earliest:
+                        earliest = dt
+        except Exception:
+            pass
+
+    if earliest and getattr(earliest, 'tzinfo', None) is None:
+        earliest = earliest.replace(tzinfo=timezone.utc)
+    _support_first_recording_cache['checked_at'] = now
+    _support_first_recording_cache['value'] = earliest
+    return earliest
+
+
+def _support_mode_context() -> dict:
+    first_dt = _support_first_recording_dt()
+    now_utc = datetime.now(timezone.utc)
+    age_days = None
+    welcome_until = None
+    in_welcome = False
+    if first_dt:
+        age_days = max(0.0, (now_utc - first_dt.astimezone(timezone.utc)).total_seconds() / 86400.0)
+        welcome_until = first_dt.astimezone(timezone.utc) + timedelta(days=SUPPORT_WELCOME_DAYS)
+        in_welcome = now_utc < welcome_until
+    return {
+        'mode': 'welcome' if in_welcome else 'ai',
+        'first_recording_at': _support_iso(first_dt),
+        'age_days': round(age_days, 2) if age_days is not None else None,
+        'welcome_days': SUPPORT_WELCOME_DAYS,
+        'welcome_until_at': _support_iso(welcome_until),
+        'phone': SUPPORT_WELCOME_PHONE,
+        'pin': SUPPORT_WELCOME_PIN,
+        'email_to': SUPPORT_EMAIL_TO,
+        'email_bcc': SUPPORT_EMAIL_BCC,
+        'email_enabled': bool(RESEND_API_KEY and SUPPORT_EMAIL_TO),
+    }
+
+
+def _support_append_event(token: str, role: str, message: str):
+    if not token or token not in _support_sessions:
+        return
+    sess = _support_sessions[token]
+    sess.setdefault('events', []).append({
+        'ts': _support_iso(datetime.now(timezone.utc)),
+        'role': role,
+        'message': (message or '').strip(),
+    })
+    sess['events'] = sess['events'][-30:]
+
+
+def _support_send_email(subject: str, html_body: str, text_body: str = '') -> tuple[bool, str]:
+    if not RESEND_API_KEY:
+        return False, 'resend_not_configured'
+    if not SUPPORT_EMAIL_TO:
+        return False, 'support_email_to_missing'
+    payload = {
+        'from': SUPPORT_EMAIL_FROM,
+        'to': [SUPPORT_EMAIL_TO],
+        'subject': subject,
+        'html': html_body,
+        'text': text_body or re.sub(r'<[^>]+>', ' ', html_body),
+    }
+    if SUPPORT_EMAIL_BCC:
+        payload['bcc'] = [SUPPORT_EMAIL_BCC]
+    req = urllib.request.Request(
+        'https://api.resend.com/emails',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {RESEND_API_KEY}',
+            'Content-Type': 'application/json',
+        },
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode('utf-8', 'replace')
+            return True, body
+    except Exception as e:
+        return False, str(e)
+
+
 def _support_make_session(customer_id: str, server_id: str, room_name: str) -> dict:
     token = uuidlib.uuid4().hex
     _support_sessions[token] = {
@@ -667,6 +872,8 @@ def _support_make_session(customer_id: str, server_id: str, room_name: str) -> d
         'server_id': (server_id or '').strip() or LIBRARY_VPS_ID,
         'room_name': (room_name or '').strip(),
         'created_at': _now_local().isoformat(),
+        'events': [],
+        'support_mode': _support_mode_context(),
     }
     return {'ok': True, 'token': token, **_support_sessions[token]}
 
@@ -788,6 +995,7 @@ def _support_status_payload() -> dict:
         'quality': quality,
         'load': load,
         'disk': disk,
+        'support_context': _support_mode_context(),
 
         # legacy fields (keep for existing clients)
         'jamulus_running': jamulus_running,
@@ -799,9 +1007,13 @@ def _support_status_payload() -> dict:
 
 
 
-def _support_reply(intent: str, text: str = '') -> dict:
+def _support_reply(intent: str, text: str = '', token: str = '') -> dict:
     intent = (intent or '').strip().lower()
-    text_l = (text or '').strip().lower()
+    text = (text or '').strip()
+    text_l = text.lower()
+    mode = _support_mode_context()
+    sess = _support_sessions.get(token) if token else None
+
     if not intent:
         if 'restart' in text_l:
             intent = 'restart'
@@ -809,10 +1021,21 @@ def _support_reply(intent: str, text: str = '') -> dict:
             intent = 'status'
         elif 'audio' in text_l or 'hear' in text_l or 'latency' in text_l or 'connect' in text_l:
             intent = 'troubleshoot'
-        elif 'human' in text_l or 'escalate' in text_l or 'help me' in text_l:
+        elif 'human' in text_l or 'escalate' in text_l or 'help me' in text_l or 'call me' in text_l:
             intent = 'escalate'
         else:
             intent = 'help'
+
+    if text:
+        faq = _support_match_faq(text)
+        if faq and intent in ('help', 'troubleshoot'):
+            return {
+                'ok': True,
+                'intent': 'faq',
+                'message': f"{faq['question']}\n\n{faq['answer']}",
+                'data': {'faq': faq, 'support_context': mode},
+                'quick_actions': ['status', 'troubleshoot', 'escalate']
+            }
 
     if intent in ('status', 'availability'):
         st = _support_status_payload()
@@ -833,24 +1056,67 @@ def _support_reply(intent: str, text: str = '') -> dict:
             data = {'ok': False, 'error': body}
         ok = bool(code and 200 <= code < 300 and data.get('ok') is True)
         msg = 'Restart requested successfully. Please retry in 20-30 seconds.' if ok else 'Restart failed. I can escalate this to a human now.'
-        return {'ok': ok, 'intent': 'restart', 'message': msg, 'data': {'upstream_code': code, 'upstream': data}, 'quick_actions': ['status', 'escalate']}
+        return {'ok': ok, 'intent': 'restart', 'message': msg, 'data': {'upstream_code': code, 'upstream': data, 'support_context': mode}, 'quick_actions': ['status', 'escalate']}
 
     if intent == 'troubleshoot':
         steps = [
             '1) Confirm Jamulus server address/port are correct.',
             '2) Reconnect and verify your nickname/input device.',
-            '3) If audio stutters, increase buffer/latency slightly.',
-            '4) If still failing, use Restart and rejoin after 30 seconds.'
+            '3) Prefer wired Ethernet and a wired headset/mic combo.',
+            '4) If audio stutters, increase buffer/latency slightly.',
+            '5) If still failing, use Restart and rejoin after 30 seconds.'
         ]
-        return {'ok': True, 'intent': 'troubleshoot', 'message': 'Try this quick checklist:\n' + '\n'.join(steps), 'quick_actions': ['status', 'restart', 'escalate']}
+        return {'ok': True, 'intent': 'troubleshoot', 'message': 'Try this quick checklist:\n' + '\n'.join(steps), 'data': {'support_context': mode}, 'quick_actions': ['status', 'restart', 'escalate']}
 
     if intent == 'escalate':
-        return {'ok': True, 'intent': 'escalate', 'message': 'Escalation requested. A human operator will review this server issue shortly.', 'quick_actions': ['status']}
+        if mode.get('mode') == 'welcome' and (mode.get('phone') or mode.get('pin')):
+            bits = ['You are still in your first support week.']
+            if mode.get('phone'):
+                bits.append(f"Call {mode['phone']}")
+            if mode.get('pin'):
+                bits.append(f"and use PIN {mode['pin']}")
+            msg = ' '.join(bits).strip() + '. I also captured your support context here.'
+            return {'ok': True, 'intent': 'escalate', 'message': msg, 'data': {'support_context': mode}, 'quick_actions': ['status', 'troubleshoot']}
+
+        st = _support_status_payload()
+        transcript = '\n'.join([f"- [{e.get('ts')}] {e.get('role')}: {e.get('message')}" for e in (sess or {}).get('events', []) if e.get('message')])
+        room_name = (sess or {}).get('room_name') or ''
+        subject = f"JamBetter support request · {LIBRARY_VPS_ID}{(' · ' + room_name) if room_name else ''}"
+        html_body = (
+            f"<h2>JamBetter support request</h2>"
+            f"<p><b>Server:</b> {LIBRARY_VPS_ID}<br>"
+            f"<b>Room:</b> {room_name or '(not set)'}<br>"
+            f"<b>Customer:</b> {(sess or {}).get('customer_id') or 'web-customer'}<br>"
+            f"<b>First recording:</b> {mode.get('first_recording_at') or 'unknown'}<br>"
+            f"<b>Tenant age (days):</b> {mode.get('age_days') if mode.get('age_days') is not None else 'unknown'}</p>"
+            f"<pre>{json.dumps(st, indent=2)}</pre>"
+            f"<h3>Transcript</h3><pre>{transcript or '(no transcript yet)'}</pre>"
+        )
+        ok, detail = _support_send_email(subject, html_body, text_body=f"Support request for {LIBRARY_VPS_ID}\n\nStatus:\n{json.dumps(st, indent=2)}\n\nTranscript:\n{transcript or '(no transcript yet)'}")
+        if ok:
+            return {'ok': True, 'intent': 'escalate', 'message': 'I sent your support request and system snapshot to the support team. They will follow up by email.', 'data': {'support_context': mode}, 'quick_actions': ['status']}
+        return {'ok': False, 'intent': 'escalate', 'message': f"I tried to send support email but email delivery is not configured yet ({detail}).", 'data': {'support_context': mode}, 'quick_actions': ['status']}
+
+    if mode.get('mode') == 'welcome' and (mode.get('phone') or mode.get('pin')):
+        parts = [f"Welcome to JamBetter. For your first {mode.get('welcome_days')} days after your first recording, you can call direct support"]
+        if mode.get('phone'):
+            parts.append(mode['phone'])
+        if mode.get('pin'):
+            parts.append(f"with PIN {mode['pin']}")
+        parts.append('I can also help right here with latency, connection, and website questions.')
+        return {
+            'ok': True,
+            'intent': 'help',
+            'message': ' '.join(parts),
+            'data': {'support_context': mode},
+            'quick_actions': ['status', 'troubleshoot', 'escalate']
+        }
 
     return {
         'ok': True,
         'intent': 'help',
-        'message': 'I can help with: status, availability, restart, troubleshooting, or escalation.',
+        'message': 'I can help with latency, website how-to questions, status, restarts, troubleshooting, or escalation by email if needed.',
+        'data': {'support_context': mode},
         'quick_actions': ['status', 'restart', 'troubleshoot', 'escalate']
     }
 
@@ -875,7 +1141,15 @@ def api_support_message():
         return jsonify({'ok': False, 'error': 'invalid session token'}), 400
     intent = d.get('intent') or ''
     text = d.get('text') or ''
-    out = _support_reply(intent, text)
+    if text:
+        _support_append_event(token, 'user', text)
+    elif intent:
+        _support_append_event(token, 'user', f'[{intent}]')
+    out = _support_reply(intent, text, token=token)
+    if out.get('message'):
+        _support_append_event(token, 'bot', out.get('message') or '')
+    if token in _support_sessions:
+        _support_sessions[token]['support_mode'] = _support_mode_context()
     out['session'] = _support_sessions.get(token)
     return jsonify(out)
 

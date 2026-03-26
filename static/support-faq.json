@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "updated": "2026-03-26",
+  "categories": [
+    {
+      "id": "latency",
+      "title": "🎵 Audio & Latency",
+      "icon": "🎵",
+      "questions": [
+        {
+          "q": "Everyone sounds delayed or out of sync. What can I do?",
+          "a": "The #1 fix is **wired Ethernet** — WiFi adds 10-40ms of unpredictable jitter that makes ensemble playing nearly impossible. Plug your computer directly into your router with an Ethernet cable. If you're already wired, try lowering your Jamulus buffer size one notch (but not below the point where audio breaks up).",
+          "tags": ["delay", "sync", "lag", "latency", "behind"]
+        },
+        {
+          "q": "I hear crackling, choppy audio, or dropouts.",
+          "a": "This is almost always a network issue. Three things to check in order:\n1. **Use wired Ethernet** (not WiFi)\n2. **Close other apps** using bandwidth (video calls, streaming, downloads)\n3. **Increase your Jamulus buffer** one notch — a small buffer increase often eliminates dropouts completely\n\nIf you're on WiFi and can't plug in, try sitting closer to your router, or ask about our Raspberry Pi rig option.",
+          "tags": ["crackling", "choppy", "dropout", "buffer", "stutter", "breaking up", "glitch"]
+        },
+        {
+          "q": "What's the best setup for low latency?",
+          "a": "The gold standard setup:\n• **Wired Ethernet** connection (not WiFi)\n• **Wired USB headset with mic** (or separate wired headphones + mic)\n• **Close all other apps** that use the network\n• **Jamulus buffer** set as low as your connection allows without dropouts\n\nBluetooth headsets add 100-300ms of delay and are not usable for real-time music. Always use wired audio.",
+          "tags": ["setup", "best", "optimal", "recommended", "low latency"]
+        },
+        {
+          "q": "Can I use Bluetooth headphones?",
+          "a": "**No** — Bluetooth adds 100-300ms of audio delay, which makes it impossible to stay in sync with other musicians. You need **wired headphones** (USB or 3.5mm jack). A USB headset with a built-in mic is the easiest all-in-one option.",
+          "tags": ["bluetooth", "wireless", "airpods", "earbuds"]
+        },
+        {
+          "q": "Can I use WiFi?",
+          "a": "We strongly recommend **wired Ethernet**. WiFi can work in a pinch, but it adds unpredictable delays (jitter) that cause audio glitches and sync problems. If WiFi is your only option:\n• Sit as close to your router as possible\n• Make sure no one else is streaming video on the same network\n• Expect that your experience will be less reliable than wired",
+          "tags": ["wifi", "wireless", "no ethernet", "can't plug in"]
+        },
+        {
+          "q": "My ping/delay numbers are high. What's normal?",
+          "a": "In your Jamulus client, look at the delay indicator:\n• **Under 40ms** — Excellent, feels nearly live\n• **40-70ms** — Good, very playable for most music\n• **70-100ms** — Fair, you may notice slight delay\n• **Over 100ms** — Difficult to play together in time\n\nIf your numbers are high, the fix is almost always: switch to wired Ethernet and close background network traffic.",
+          "tags": ["ping", "delay", "numbers", "ms", "milliseconds", "normal"]
+        },
+        {
+          "q": "The jitter indicator keeps flashing red. What does that mean?",
+          "a": "Red jitter means your network connection is unstable — packets are arriving at irregular intervals. This causes audio breakups. The fix:\n1. **Switch to wired Ethernet** (this is the #1 cause)\n2. Close any downloads, streaming, or video calls\n3. If wired and still red, try a different Ethernet port on your router, or restart your router",
+          "tags": ["jitter", "red", "flashing", "unstable", "indicator"]
+        }
+      ]
+    },
+    {
+      "id": "raspberry-pi",
+      "title": "🥧 Raspberry Pi Rig",
+      "icon": "🥧",
+      "questions": [
+        {
+          "q": "What is the Raspberry Pi rig?",
+          "a": "It's a small, affordable dedicated computer (~$50-80) that we set up specifically for Jamulus. You plug it into your router with Ethernet, connect your mic and headphones, and it handles everything. It's the most reliable way to connect because it's dedicated to just one job — no other apps competing for resources.",
+          "tags": ["raspberry pi", "pi", "rig", "what is", "dedicated"]
+        },
+        {
+          "q": "Why use a Pi instead of my computer?",
+          "a": "Your regular computer runs dozens of background processes (updates, browsers, cloud sync) that steal CPU and network bandwidth. A Pi running Jamulus has virtually zero background noise — it's 100% dedicated to your music session. Plus it's always plugged into Ethernet, always ready, and uses almost no electricity.",
+          "tags": ["why pi", "advantage", "better", "instead of computer"]
+        },
+        {
+          "q": "How do I get a Raspberry Pi rig set up?",
+          "a": "Contact us and we'll walk you through it! We can either:\n• Ship you a pre-configured Pi ready to plug in\n• Guide you through setting up your own if you already have one\n\nYou'll need: a Raspberry Pi 4 (or newer), an Ethernet cable, a USB audio interface or USB headset, and a power supply.",
+          "tags": ["get", "buy", "order", "setup", "configure", "how to"]
+        },
+        {
+          "q": "What do I plug into the Pi?",
+          "a": "Three things:\n1. **Ethernet cable** — from Pi to your router\n2. **USB headset** (or USB audio interface + headphones + mic)\n3. **Power supply** — the USB-C cable that comes with the Pi\n\nThat's it. No monitor or keyboard needed after initial setup — you control everything from the website on your phone or tablet.",
+          "tags": ["plug in", "connect", "cables", "what do i need"]
+        }
+      ]
+    },
+    {
+      "id": "website",
+      "title": "🌐 Using the Website",
+      "icon": "🌐",
+      "questions": [
+        {
+          "q": "How do I start a recording session?",
+          "a": "1. Type a **session name** in the text box (e.g., your song name or rehearsal date)\n2. Click **Start Recording**\n3. Everyone's audio is now being recorded as separate tracks\n4. When done, click **Stop Recording**\n\nIf you have a backing track selected, it will automatically start playing when you hit record.",
+          "tags": ["record", "start", "session", "how to record"]
+        },
+        {
+          "q": "Where do I find my recordings?",
+          "a": "In the **Browse** section at the bottom of the page. Your recordings are organized in folders by session name. Tap a folder to open it, and you'll see individual WAV files for each singer/musician.\n\nYou can:\n• **Tap a file** to play it in your browser\n• **Download individual files** or **Download Folder ZIP** to get everything at once",
+          "tags": ["find", "recordings", "where", "browse", "files", "download"]
+        },
+        {
+          "q": "How do I play a backing track?",
+          "a": "1. Go to the **Backing Track** section\n2. Browse the available tracks in the file list\n3. Select the track you want\n4. Click **Play** (or just start recording — it plays automatically)\n\nTo upload your own backing track, use the **Upload** button. It will appear in the **temp** folder.",
+          "tags": ["backing track", "play", "music", "accompaniment", "track"]
+        },
+        {
+          "q": "How do I use the metronome?",
+          "a": "In the **Metronome** section:\n• Set your **BPM** (tempo) with the slider\n• Adjust **Volume** if needed\n• Click **Start** to begin the click track\n• Click **Stop** when done\n\nThe metronome plays through the server so everyone hears it in sync.",
+          "tags": ["metronome", "click", "tempo", "bpm", "beat"]
+        },
+        {
+          "q": "What does 'Restart Jukebox' do?",
+          "a": "It restarts the backing track player. Use this if:\n• A backing track stops playing unexpectedly\n• You want to restart the track from the beginning\n• Audio from the Jukebox sounds garbled\n\nIt does NOT affect the Jamulus server or other musicians' connections — only the backing track system.",
+          "tags": ["restart", "jukebox", "bot", "backing track restart"]
+        },
+        {
+          "q": "How do I download recordings to my phone?",
+          "a": "On iPhone:\n1. Tap the file to play it\n2. Use the **Download** button or tap the 📎 share icon\n3. If you set up the **JamBetter Share MP3** shortcut, it will open the share sheet automatically\n\nOn Android:\n1. Tap the file name\n2. Long-press or use the download button\n3. Find it in your Downloads folder",
+          "tags": ["download", "phone", "iphone", "android", "save", "share"]
+        },
+        {
+          "q": "What's the temp folder for?",
+          "a": "The **temp** folder is where your uploaded backing tracks go. When you upload an audio file using the Upload button, it appears here. You can then select it as your backing track for recording sessions.",
+          "tags": ["temp", "folder", "upload", "temporary"]
+        },
+        {
+          "q": "I can't hear anyone / no one can hear me.",
+          "a": "This is usually a Jamulus client issue, not the website:\n1. Make sure your **Jamulus client is connected** (check the connection indicator)\n2. Verify your **input device** is set to your mic in Jamulus settings\n3. Verify your **output device** is set to your headphones\n4. Check that your **faders aren't muted** in the Jamulus mixer\n5. Make sure you're using **wired** headphones (not Bluetooth)\n\nIf everything looks right in Jamulus but you still can't hear, try disconnecting and reconnecting.",
+          "tags": ["can't hear", "no sound", "muted", "audio", "silent", "no audio"]
+        }
+      ]
+    },
+    {
+      "id": "connection",
+      "title": "🔌 Connection & Setup",
+      "icon": "🔌",
+      "questions": [
+        {
+          "q": "How do I connect to the Jamulus server?",
+          "a": "1. Open your Jamulus client\n2. Click **Connect**\n3. Enter the server address provided to your group\n4. Click **Connect**\n\nIf you're using a Raspberry Pi rig, it connects automatically — no action needed.",
+          "tags": ["connect", "server", "address", "join", "how to connect"]
+        },
+        {
+          "q": "I got disconnected. What should I do?",
+          "a": "Just reconnect in your Jamulus client. Disconnections happen occasionally due to network blips. If it keeps happening:\n1. Check your Ethernet cable is firmly plugged in\n2. Make sure no one is heavily using your internet\n3. Try restarting your router\n4. If on WiFi — please switch to wired Ethernet",
+          "tags": ["disconnected", "dropped", "lost connection", "kicked"]
+        },
+        {
+          "q": "The server shows as offline or I can't connect.",
+          "a": "Try these steps:\n1. Use the **Check Status** button in the Support panel to verify the server is running\n2. Double-check your server address and port number\n3. If the server is down, use **Request Restart** in the Support panel\n4. Wait 30 seconds and try connecting again\n\nIf it's still down after a restart, use **Escalate** for human help.",
+          "tags": ["offline", "down", "can't connect", "server down", "unreachable"]
+        }
+      ]
+    },
+    {
+      "id": "account",
+      "title": "👤 Account & General",
+      "icon": "👤",
+      "questions": [
+        {
+          "q": "How do I change my display name in Jamulus?",
+          "a": "In your Jamulus client:\n1. Go to **Settings** (or **Edit → My Profile**)\n2. Change your **Musician Name/Alias**\n3. Click OK\n\nYour name will update for everyone in the session. This is also the name that appears on your recorded files.",
+          "tags": ["name", "display name", "nickname", "change name", "alias"]
+        },
+        {
+          "q": "Who do I contact for help?",
+          "a": "Use the **💬 Support** button on this page! The AI assistant can help with most common issues. If it can't resolve your problem, click **Escalate** and a human will follow up with you.",
+          "tags": ["help", "contact", "support", "who to call", "human"]
+        }
+      ]
+    }
+  ]
+}

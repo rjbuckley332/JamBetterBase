@@ -376,13 +376,19 @@
         </div>
         <div class="support-body">
             <div style="font-size:12px;opacity:0.85;margin-bottom:8px;">Server: <code id="supportServerBadge"></code></div>
+            <div id="supportModeBanner" style="display:none;margin:8px 0 10px 0; padding:8px; border:1px solid rgba(255,255,255,.18); border-radius:8px; background: rgba(255,255,255,.08);"></div>
             <div class="support-actions">
                 <button type="button" class="btn btn-sm btn-info" onclick="supportQuick('status'); return false;">Check Status</button>
                 <button type="button" class="btn btn-sm btn-warning" onclick="supportQuick('restart'); return false;">Request Restart</button>
                 <button type="button" class="btn btn-sm" onclick="supportQuick('troubleshoot'); return false;">Troubleshoot</button>
                 <button type="button" class="btn btn-sm btn-danger" onclick="supportQuick('escalate'); return false;">Escalate</button>
             </div>
-                        <div class="support-metrics" style="margin:8px 0 10px 0; padding:8px; border:1px solid rgba(255,255,255,.15); border-radius:8px;">
+            <div style="margin:8px 0 10px 0; padding:8px; border:1px solid rgba(255,255,255,.15); border-radius:8px;">
+                <div style="font-size:12px;opacity:.9;margin-bottom:6px;"><b>Search common answers</b></div>
+                <input id="supportFaqSearch" type="text" placeholder="Search latency, Raspberry Pi, recording, downloads..." style="width:100%;color:#111;margin-bottom:8px;" oninput="renderSupportFaq(this.value)">
+                <div id="supportFaqList" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;"></div>
+            </div>
+            <div class="support-metrics" style="margin:8px 0 10px 0; padding:8px; border:1px solid rgba(255,255,255,.15); border-radius:8px;">
                 <div style="font-size:12px;opacity:.9;margin-bottom:6px;"><b>Client Quality Check</b> (enter Jamulus metrics)</div>
                 <div style="display:flex; gap:6px; flex-wrap:wrap;">
                     <input id="cqPing" type="number" placeholder="Ping ms" style="width:88px;" />
@@ -398,7 +404,7 @@
 
             <div id="supportLog" class="support-log"></div>
             <div class="support-input">
-                <input id="supportText" type="text" placeholder="Describe your issue..." style="color:#111;" />
+                <input id="supportText" type="text" placeholder="Describe your issue..." style="color:#111;" onkeydown="if(event.key==='Enter'){supportSendText();return false;}">
                 <button type="button" class="btn btn-sm btn-success" onclick="supportSendText(); return false;">Send</button>
             </div>
         </div>
@@ -412,6 +418,8 @@
         const SUPPORT_BOT_URL = {{ (support_bot_url or '')|tojson }};
         const SUPPORT_SERVER_ID = {{ (support_server_id or '')|tojson }};
         let supportToken = null;
+        let supportFaq = [];
+        let supportSessionMeta = null;
 
         function supportLog(line) {
             const el = document.getElementById('supportLog');
@@ -421,6 +429,89 @@
             el.scrollTop = el.scrollHeight;
         }
 
+        function escapeHtml(s) {
+            return String(s || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+
+        function nl2br(s) {
+            return escapeHtml(s).replace(/\n/g, '<br>');
+        }
+
+        function flattenSupportFaq(data) {
+            const out = [];
+            (data?.categories || []).forEach(cat => {
+                (cat.questions || []).forEach(q => out.push({
+                    categoryId: cat.id,
+                    categoryTitle: cat.title,
+                    q: q.q,
+                    a: q.a,
+                    tags: q.tags || []
+                }));
+            });
+            return out;
+        }
+
+        async function loadSupportFaq() {
+            if (supportFaq.length) return supportFaq;
+            try {
+                const res = await fetch('/static/support-faq.json', {cache:'no-store'});
+                const data = await res.json();
+                supportFaq = flattenSupportFaq(data);
+                renderSupportFaq('');
+            } catch (e) {
+                console.warn('support faq load failed', e);
+            }
+            return supportFaq;
+        }
+
+        function renderSupportFaq(filterText) {
+            const el = document.getElementById('supportFaqList');
+            if (!el) return;
+            const q = String(filterText || '').trim().toLowerCase();
+            const items = (supportFaq || []).filter(item => {
+                if (!q) return true;
+                const hay = `${item.categoryTitle} ${item.q} ${item.a} ${(item.tags||[]).join(' ')}`.toLowerCase();
+                return hay.includes(q);
+            }).slice(0, 8);
+            if (!items.length) {
+                el.innerHTML = '<div style="font-size:12px;opacity:.8;">No matching FAQ yet. Type your question below and the support bot will try to help.</div>';
+                return;
+            }
+            el.innerHTML = items.map((item, idx) => `
+                <button type="button" class="btn btn-sm" style="text-align:left;white-space:normal;display:block;width:100%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);" onclick="supportFaqAnswer(${idx}, ${JSON.stringify(q)})">
+                    <div><b>${escapeHtml(item.q)}</b></div>
+                    <div style="font-size:11px;opacity:.75;">${escapeHtml(item.categoryTitle)}</div>
+                </button>
+            `).join('');
+            window._supportFaqFiltered = items;
+        }
+
+        function supportFaqAnswer(index) {
+            const item = (window._supportFaqFiltered || [])[index];
+            if (!item) return;
+            supportLog(`FAQ · ${item.q}`);
+            supportLog(nl2br(item.a));
+        }
+
+        function renderSupportMode(meta) {
+            const box = document.getElementById('supportModeBanner');
+            if (!box) return;
+            const mode = meta?.support_mode || meta?.support_context || meta;
+            if (!mode || !mode.mode) {
+                box.style.display = 'none';
+                box.innerHTML = '';
+                return;
+            }
+            if (mode.mode === 'welcome') {
+                const phone = mode.phone ? `<div><b>Call:</b> <code>${escapeHtml(mode.phone)}</code></div>` : '';
+                const pin = mode.pin ? `<div><b>PIN:</b> <code>${escapeHtml(mode.pin)}</code></div>` : '';
+                box.innerHTML = `<div style="font-size:12px;"><b>First-week welcome support</b></div><div style="font-size:12px;opacity:.9;margin-top:4px;">For the first ${escapeHtml(mode.welcome_days)} days after your first recording, you can call direct support. I can also help with latency, setup, and website questions right here.</div>${phone}${pin}`;
+            } else {
+                const emailLine = mode.email_enabled ? `<div style="margin-top:4px;">If I can’t solve it, I can email support for follow-up.</div>` : `<div style="margin-top:4px;">AI support is active. Email escalation still needs final mail configuration.</div>`;
+                box.innerHTML = `<div style="font-size:12px;"><b>AI support mode</b></div><div style="font-size:12px;opacity:.9;margin-top:4px;">Ask me about latency, Raspberry Pi rigs, recording, downloads, or connection issues.</div>${emailLine}`;
+            }
+            box.style.display = 'block';
+        }
 
         function analyzeClientQuality() {
             const ping = parseFloat(document.getElementById('cqPing')?.value || '0');
@@ -462,7 +553,11 @@
                 body: JSON.stringify({ customer_id: 'web-customer', server_id: SUPPORT_SERVER_ID, room_name: room })
             });
             const data = await res.json();
-            if (data.ok) supportToken = data.token;
+            if (data.ok) {
+                supportToken = data.token;
+                supportSessionMeta = data;
+                renderSupportMode(data);
+            }
             return supportToken;
         }
 
@@ -479,11 +574,16 @@
                     await ensureSupportSession();
                     return supportQuick(intent);
                 }
+                if (data?.session) {
+                    supportSessionMeta = data.session;
+                    renderSupportMode(data.session);
+                }
+                if (data?.data?.support_context) renderSupportMode(data.data.support_context);
                 supportLog((data && (data.message || data.error)) || 'No response');
                 if (intent === 'status' && data && data.data && data.data.quality) {
                     const q = data.data.quality;
                     const badge = q.grade === 'green' ? '🟢' : (q.grade === 'yellow' ? '🟡' : '🔴');
-                    supportLog(`${badge} Quality: ${q.label} · load ${q.load1}/${q.cores} cores`);
+                    supportLog(`${badge} Quality: ${q.label} · load ${data.data.load?.load1 ?? 0}/${data.data.load?.cores ?? 1} cores`);
                 }
             } catch (e) {
                 supportLog('Support error: ' + e);
@@ -506,21 +606,30 @@
                 if (!res.ok && data && data.error === 'invalid session token') {
                     supportToken = null;
                     await ensureSupportSession();
-                    return supportQuick(intent);
+                    return supportSendText();
                 }
+                if (data?.session) {
+                    supportSessionMeta = data.session;
+                    renderSupportMode(data.session);
+                }
+                if (data?.data?.support_context) renderSupportMode(data.data.support_context);
                 supportLog((data && (data.message || data.error)) || 'No response');
             } catch (e) {
                 supportLog('Support error: ' + e);
             }
         }
 
-        function toggleSupportPanel(forceOpen) {
+        async function toggleSupportPanel(forceOpen) {
             const panel = document.getElementById('supportWidget');
             const wantOpen = (typeof forceOpen === 'boolean') ? forceOpen : !panel.classList.contains('open');
             panel.classList.toggle('open', wantOpen);
             document.getElementById('supportServerBadge').textContent = SUPPORT_SERVER_ID || 'unknown';
+            if (wantOpen) {
+                await loadSupportFaq();
+                await ensureSupportSession();
+            }
             if (wantOpen && !document.getElementById('supportLog').innerHTML) {
-                supportLog('Support is ready. Choose an action or describe your issue.');
+                supportLog('Support is ready. Search the FAQ or describe your issue.');
             }
         }
 
