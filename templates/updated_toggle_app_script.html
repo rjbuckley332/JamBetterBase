@@ -651,7 +651,17 @@
             setTimeout(() => { try { el.remove(); } catch(e) {} }, ms);
         }
 
-        
+        // iOS Shortcuts helper (for MP3 share handoff)
+        const JB_SHORTCUT_NAME = 'JamBetter Share MP3';
+        function shortcutsRunUrl(shortcutName, fileUrl) {
+            const name = shortcutName || JB_SHORTCUT_NAME;
+            try {
+                return `shortcuts://run-shortcut?name=${encodeURIComponent(name)}&input=${encodeURIComponent(fileUrl || '')}`;
+            } catch (e) {
+                return 'shortcuts://';
+            }
+        }
+
         // Simple API fetch
         async function apiFetch(url, opts) {
             return fetch(url, opts || {});
@@ -985,6 +995,22 @@
                     shareBtn.title = 'Share';
                     shareBtn.onclick = () => shareFile(wavCurrentPath + f.name, f.name);
                     actions.appendChild(shareBtn);
+
+                    // iPhone-friendly "Share MP3" via Shortcuts (downloads then opens share sheet with file attached)
+                    if (String(f.name || '').toLowerCase().endsWith('.mp3')) {
+                        const mp3Btn = document.createElement('button');
+                        mp3Btn.type = 'button';
+                        mp3Btn.className = 'btn btn-sm btn-warning icon-btn';
+                        mp3Btn.textContent = '📎';
+                        mp3Btn.title = 'Send MP3 (Shortcuts)';
+                        mp3Btn.onclick = () => {
+                            const dlUrl = window.location.origin + '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                            const u = shortcutsRunUrl('JamBetter Share MP3', dlUrl);
+                            // Use window.location so iOS treats this as an app handoff.
+                            window.location.href = u;
+                        };
+                        actions.appendChild(mp3Btn);
+                    }
                     
                     row.appendChild(actions);
                     filesDiv.appendChild(row);
