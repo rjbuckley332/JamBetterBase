@@ -920,8 +920,14 @@
                 seenDirsByPath[pathKey] = dirsNow;
 
                 
-                // Folders (hide old 'tmp' folder, only show 'temp')
-                (data.dirs || []).filter(d => d !== 'tmp').forEach(d => {
+                // Folders: hide trash/archive noise, keep temp visible, and inject temp at
+                // recordings root if tenant scoping made it disappear from the backend listing.
+                const hiddenDirs = new Set(['tmp', 'trash', '.trash', '.archived']);
+                let visibleDirs = (data.dirs || []).filter(d => !hiddenDirs.has(String(d || '').toLowerCase()));
+                if (wavCurrentPath === 'recordings/' && !visibleDirs.includes('temp')) {
+                    visibleDirs = ['temp', ...visibleDirs];
+                }
+                visibleDirs.forEach(d => {
                     const btn = document.createElement('div');
                     btn.className = 'file-row';
                     btn.innerHTML = '<span>📁 ' + d + '/</span>';

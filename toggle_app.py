@@ -289,20 +289,37 @@ def _tenant_slug_from_request() -> str | None:
 def _apply_tenant_scope(area: str, sub: str, *, for_listing: bool = False) -> tuple[str, str] | tuple[None, None]:
     """Apply host-based tenant scoping to library paths.
 
-    recordings on tenant hosts are constrained to recordings/<tenant>/...
+    recordings on tenant hosts are constrained to recordings/<tenant>/..., with one
+    deliberate shared exception: recordings/temp/ remains visible so users can access
+    uploaded backing tracks from the tenant UI.
+
     - listing recordings/ on a tenant host is rewritten to recordings/<tenant>/
-    - non-tenant recordings paths are rejected
+    - paths already rooted at recordings/<tenant>/ are allowed
+    - bare tenant-relative paths like recordings/2026-03-27/ are rewritten to recordings/<tenant>/2026-03-27/
+    - shared utility path recordings/temp/ is allowed unchanged
+    - explicit paths for a different tenant are rejected
     tracks remain shared unless explicitly scoped elsewhere
     """
     tenant = _tenant_slug_from_request()
     sub = (sub or '').strip('/').replace('\\', '/')
     if area == 'recordings' and tenant:
+        shared_roots = {'temp'}
+        hidden_roots = {'trash', '.trash', '.archived'}
         if not sub:
             sub = tenant
         elif sub == tenant or sub.startswith(tenant + '/'):
             pass
         else:
-            return None, None
+            first = sub.split('/', 1)[0].lower()
+            known_tenants = {'pd', 'vc', 'seigr'}
+            if first in shared_roots:
+                pass
+            elif first in hidden_roots:
+                return None, None
+            elif first in known_tenants:
+                return None, None
+            else:
+                sub = f'{tenant}/{sub}'
     if sub:
         sub += '/'
     return area, sub
