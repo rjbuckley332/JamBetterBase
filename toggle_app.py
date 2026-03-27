@@ -1330,6 +1330,8 @@ def wav_stream():
     res = _s3_presign(key, expires=300, attachment=False)
     if not res.get("ok"):
         return jsonify(res), 403
+    if (request.args.get("format") or "").strip().lower() == "json":
+        return jsonify(res)
     return redirect(res["url"])
 
 
