@@ -340,6 +340,8 @@
                 <button id="playToggleBtn" class="btn btn-success" onclick="togglePlayback()">Play Track</button>
                 <button class="btn btn-info" onclick="restartTrack()">Restart Track</button>
                 <button class="btn btn-warning" onclick="clearQueuedWav()">Clear Track</button>
+                <button class="btn btn-success" onclick="openPracticeWithTrack()">Practice</button>
+                <button class="btn btn-info" onclick="openTunerWithTrack()">Tuner</button>
             </div>
             
             <div id="wavBrowser" style="margin-top:15px;">
@@ -1115,6 +1117,24 @@
             refreshStatuses();
             setInterval(refreshStatuses, 3000);
         };
+
+        function openPracticeWithTrack() {
+            const track = document.getElementById('queuedWavDisplay').textContent.trim();
+            if (!track || track === '(none)') {
+                window.open('/practice', '_blank');
+            } else {
+                window.open('/practice?s3=' + encodeURIComponent(track), '_blank');
+            }
+        }
+
+        function openTunerWithTrack() {
+            const track = document.getElementById('queuedWavDisplay').textContent.trim();
+            if (!track || track === '(none)') {
+                window.open('/pitch', '_blank');
+            } else {
+                window.open('/pitch?s3=' + encodeURIComponent(track), '_blank');
+            }
+        }
     </script>
 </body>
 </html>
