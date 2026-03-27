@@ -266,10 +266,43 @@ def _lib_prefix(area: str, subprefix: str = "") -> str:
     return base + sub
 
 
+def _tenant_slug_from_request() -> str | None:
+    host = (request.headers.get('X-Forwarded-Host') or request.host or '').split(':', 1)[0].strip().lower()
+    if host.endswith('.jambetter.music'):
+        sub = host.split('.', 1)[0]
+        if sub in ('pd', 'vc', 'seigr'):
+            return sub
+    forced = (os.getenv('LIBRARY_TENANT') or '').strip().lower()
+    return forced or None
+
+
+def _apply_tenant_scope(area: str, sub: str, *, for_listing: bool = False) -> tuple[str, str] | tuple[None, None]:
+    """Apply host-based tenant scoping to library paths.
+
+    recordings on tenant hosts are constrained to recordings/<tenant>/...
+    - listing recordings/ on a tenant host is rewritten to recordings/<tenant>/
+    - non-tenant recordings paths are rejected
+    tracks remain shared unless explicitly scoped elsewhere
+    """
+    tenant = _tenant_slug_from_request()
+    sub = (sub or '').strip('/').replace('\\', '/')
+    if area == 'recordings' and tenant:
+        if not sub:
+            sub = tenant
+        elif sub == tenant or sub.startswith(tenant + '/'):
+            pass
+        else:
+            return None, None
+    if sub:
+        sub += '/'
+    return area, sub
+
+
 def _safe_library_path_subpath(path_value: str) -> tuple[str, str] | tuple[None, None]:
     """Return (area, subpath) for a user path like recordings/foo/bar/.
 
     area in {recordings, tracks}; subpath is normalized relative path with trailing slash allowed.
+    Applies host-based tenant scoping for recordings.
     """
     raw = (path_value or '').strip().lstrip('/')
     if not raw:
@@ -284,9 +317,33 @@ def _safe_library_path_subpath(path_value: str) -> tuple[str, str] | tuple[None,
     if area not in ('recordings', 'tracks'):
         return None, None
     sub = '/'.join(parts[1:])
-    if sub and not sub.endswith('/'):
-        sub += '/'
-    return area, sub
+    return _apply_tenant_scope(area, sub)
+
+
+def _safe_library_file_path(path_value: str) -> tuple[str, str] | tuple[None, None]:
+    """Return (area, relative_file_path) for a user file path like recordings/foo/bar.wav.
+
+    Applies host-based tenant scoping for recordings.
+    """
+    raw = (path_value or '').strip().lstrip('/')
+    if not raw:
+        return None, None
+    raw = raw.replace('\\', '/')
+    if '..' in raw:
+        return None, None
+    parts = [p for p in raw.split('/') if p]
+    if len(parts) < 2:
+        return None, None
+    area = parts[0].lower()
+    if area not in ('recordings', 'tracks'):
+        return None, None
+    sub = '/'.join(parts[1:-1])
+    area, scoped_sub = _apply_tenant_scope(area, sub)
+    if not area:
+        return None, None
+    filename = parts[-1]
+    rel = ((scoped_sub or '') + filename).lstrip('/')
+    return area, rel
 
 
 def _zip_filename_for_subpath(subpath: str, fallback: str = 'session') -> str:
@@ -1201,15 +1258,21 @@ def ops_dashboard():
 def wav_browse():
     ok, resp = _require_passcode()
     if not ok: return resp
-    # Use library API directly
-    sub = (request.args.get('path') or '').lstrip('/')
-    area = 'tracks' if sub.startswith('tracks/') else 'recordings'
-    prefix = sub.replace('tracks/', '').replace('recordings/', '')
-    
+
+    raw_path = request.args.get('path') or 'recordings/'
+    area, sub = _safe_library_path_subpath(raw_path)
+    if not area:
+        return jsonify({"ok": False, "error": "path not allowed for this tenant"}), 403
+
     try:
-        prefix = f"vps/{LIBRARY_VPS_ID}/{area}/" + prefix
+        prefix = _lib_prefix(area, sub)
         result = _s3_list(prefix)
-        return jsonify({"ok": True, "dirs": result.get('dirs', []), "files": result.get('files', [])})
+        return jsonify({
+            "ok": True,
+            "path": f"{area}/" + (sub or ''),
+            "dirs": result.get('dirs', []),
+            "files": result.get('files', [])
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1312,7 +1375,10 @@ def wav_download():
     file_path = (request.args.get("file") or "").strip()
     if not file_path:
         return jsonify({"ok": False, "error": "missing file"}), 400
-    key = f"vps/{LIBRARY_VPS_ID}/{file_path}"
+    area, rel = _safe_library_file_path(file_path)
+    if not area:
+        return jsonify({"ok": False, "error": "file not allowed for this tenant"}), 403
+    key = _lib_prefix(area, '') + rel
     res = _s3_presign(key, expires=300, attachment=True)
     if not res.get("ok"):
         return jsonify(res), 403
@@ -1326,7 +1392,10 @@ def wav_stream():
     file_path = (request.args.get("file") or "").strip()
     if not file_path:
         return jsonify({"ok": False, "error": "missing file"}), 400
-    key = f"vps/{LIBRARY_VPS_ID}/{file_path}"
+    area, rel = _safe_library_file_path(file_path)
+    if not area:
+        return jsonify({"ok": False, "error": "file not allowed for this tenant"}), 403
+    key = _lib_prefix(area, '') + rel
     res = _s3_presign(key, expires=300, attachment=False)
     if not res.get("ok"):
         return jsonify(res), 403
