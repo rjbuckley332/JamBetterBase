@@ -62,6 +62,16 @@ RECORDINGS_DIR  = "/var/lib/jamulus/recordings"
 JSONRPC_HOST = os.getenv("JAMULUS_JSONRPC_HOST", "127.0.0.1")
 JSONRPC_PORT = int(os.getenv("JAMULUS_JSONRPC_PORT", "22100"))
 JSONRPC_SECRET_FILE = os.getenv("JAMULUS_JSONRPC_SECRET_FILE", "/var/lib/jamulus/jsonrpc-secret.txt")
+TENANT_JSONRPC_PORTS = {
+    'pd': int(os.getenv('JAMULUS_JSONRPC_PORT_PD', '23100')),
+    'vc': int(os.getenv('JAMULUS_JSONRPC_PORT_VC', '23101')),
+    'seigr': int(os.getenv('JAMULUS_JSONRPC_PORT_SEIGR', '23102')),
+}
+TENANT_RECORDING_DIRS = {
+    'pd': (os.getenv('JAMULUS_RECORDINGS_DIR_PD', '') or '').strip(),
+    'vc': (os.getenv('JAMULUS_RECORDINGS_DIR_VC', '') or '').strip(),
+    'seigr': (os.getenv('JAMULUS_RECORDINGS_DIR_SEIGR', '') or '').strip(),
+}
 
 SAVED_NAMES_CSV = os.path.join(BASE_DIR, "saved_session_names.csv")
 SESSION_LOG_JSN = os.path.join(BASE_DIR, "session_name_log.json")
@@ -453,35 +463,64 @@ def _s3_presign(key: str, expires: int = 900, attachment: bool = True) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-# ---------- HELPER: Jamulus PID ----------
-def get_jamulus_pid():
-    """Return Jamulus server PID (systemd first; fallback to pgrep)."""
+def _jamulus_context() -> dict:
+    tenant = _tenant_slug_from_request()
+    port = TENANT_JSONRPC_PORTS.get(tenant, JSONRPC_PORT)
+    recordings_dir = TENANT_RECORDING_DIRS.get(tenant) or RECORDINGS_DIR
+    ctx = {
+        'tenant': tenant,
+        'host': JSONRPC_HOST,
+        'port': int(port),
+        'secret_file': JSONRPC_SECRET_FILE,
+        'recordings_dir': recordings_dir,
+    }
+
     try:
-        outp = subprocess.run(["systemctl", "show", "jamulus-headless.service", "-p", "MainPID", "--value"], capture_output=True, text=True).stdout.strip()
-        if outp and outp.isdigit() and int(outp) > 0:
-            return int(outp)
+        proc = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True, check=False)
+        for line in proc.stdout.splitlines():
+            raw = line.strip()
+            if not raw or 'jamulus-headless' not in raw:
+                continue
+            if f"--jsonrpcport {ctx['port']}" not in raw:
+                continue
+            parts = raw.split(None, 1)
+            if parts and parts[0].isdigit():
+                ctx['pid'] = int(parts[0])
+            m = re.search(r'(?:^|\s)-R\s+(\S+)', raw)
+            if m:
+                ctx['recordings_dir'] = m.group(1)
+            break
     except Exception:
         pass
-    try:
-        outp = subprocess.run(["pgrep", "-f", "/usr/bin/Jamulus -s"], capture_output=True, text=True).stdout.strip()
-        return int(outp.splitlines()[0]) if outp else None
-    except Exception:
-        return None
+
+    return ctx
+
+
+# ---------- HELPER: Jamulus PID ----------
+def get_jamulus_pid(ctx: dict | None = None):
+    """Return Jamulus server PID for the active tenant context."""
+    ctx = ctx or _jamulus_context()
+    pid = ctx.get('pid')
+    if isinstance(pid, int) and pid > 0:
+        return pid
+    return None
 
 # ---------- HELPER: Jamulus JSON-RPC ------------
-def _read_jsonrpc_secret() -> str | None:
+def _read_jsonrpc_secret(ctx: dict | None = None) -> str | None:
+    ctx = ctx or _jamulus_context()
     try:
-        with open(JSONRPC_SECRET_FILE, "r") as f:
+        with open(ctx['secret_file'], "r") as f:
             return f.read().strip()
     except Exception:
         return None
 
 
-def _jsonrpc_send_lines(lines: list[str], timeout: float = 2.0) -> list[dict]:
+def _jsonrpc_send_lines(lines: list[str], timeout: float = 2.0, *, ctx: dict | None = None) -> list[dict]:
     """Send newline-delimited JSON-RPC messages over TCP; returns decoded JSON responses."""
+    ctx = ctx or _jamulus_context()
     data = ("\n".join(lines) + "\n").encode("utf-8")
     out: list[dict] = []
-    with socket.create_connection((JSONRPC_HOST, JSONRPC_PORT), timeout=timeout) as s:
+    with socket.create_connection((ctx['host'], int(ctx['port'])), timeout=timeout) as s:
         s.settimeout(timeout)
         s.sendall(data)
         buf = b""
@@ -500,14 +539,15 @@ def _jsonrpc_send_lines(lines: list[str], timeout: float = 2.0) -> list[dict]:
     return out
 
 
-def jamulus_rpc_request(method: str, params: dict | None = None) -> dict:
-    secret = _read_jsonrpc_secret()
+def jamulus_rpc_request(method: str, params: dict | None = None, *, ctx: dict | None = None) -> dict:
+    ctx = ctx or _jamulus_context()
+    secret = _read_jsonrpc_secret(ctx)
     if not secret:
         raise RuntimeError("JSON-RPC secret file missing/unreadable")
 
     auth = json.dumps({"id": 1, "jsonrpc": "2.0", "method": "jamulus/apiAuth", "params": {"secret": secret}})
     req = json.dumps({"id": 2, "jsonrpc": "2.0", "method": method, "params": params or {}})
-    resps = _jsonrpc_send_lines([auth, req])
+    resps = _jsonrpc_send_lines([auth, req], ctx=ctx)
     if len(resps) < 2:
         raise RuntimeError("JSON-RPC: incomplete response")
 
@@ -521,23 +561,26 @@ def jamulus_rpc_request(method: str, params: dict | None = None) -> dict:
 
 
 # ---------- HELPER: recording state ------------
-def jamulus_recording_enabled() -> bool | None:
+def jamulus_recording_enabled(ctx: dict | None = None) -> bool | None:
     """Return true/false if JSON-RPC is available; otherwise None."""
+    ctx = ctx or _jamulus_context()
     try:
-        resp = jamulus_rpc_request("jamulusserver/getRecorderStatus")
+        resp = jamulus_rpc_request("jamulusserver/getRecorderStatus", ctx=ctx)
         result = resp.get("result") or {}
         return bool(result.get("enabled"))
     except Exception:
         return None
 
 
-def _has_recent_recording_writes(active_window_seconds: int = 15) -> bool:
+def _has_recent_recording_writes(active_window_seconds: int = 15, *, ctx: dict | None = None) -> bool:
     """Fallback heuristic: consider recording active if files were written recently in newest Jam-* dir."""
+    ctx = ctx or _jamulus_context()
+    recordings_dir = ctx.get('recordings_dir') or RECORDINGS_DIR
     try:
-        if not os.path.isdir(RECORDINGS_DIR):
+        if not os.path.isdir(recordings_dir):
             return False
         jam_dirs = sorted(
-            (d for d in glob.glob(os.path.join(RECORDINGS_DIR, "Jam-*")) if os.path.isdir(d)),
+            (d for d in glob.glob(os.path.join(recordings_dir, "Jam-*")) if os.path.isdir(d)),
             key=lambda p: os.path.getmtime(p),
             reverse=True,
         )
@@ -573,6 +616,7 @@ def toggle_recording():
     name  = (data.get("session_name") or "").strip()
     action = (data.get("action") or "").strip().lower()
     include_injector = bool(data.get("include_injector", False))
+    ctx = _jamulus_context()
 
     # Persist user preference for uploader behavior
     try:
@@ -588,15 +632,15 @@ def toggle_recording():
     if action not in ("start", "stop"):
         return "Invalid action", 400
 
-    pid = get_jamulus_pid()
+    pid = get_jamulus_pid(ctx)
     if not pid:
-        return "Jamulus server not running", 500
+        return f"Jamulus server not running for tenant {ctx.get('tenant') or 'default'}", 500
 
     # Prefer JSON-RPC explicit start/stop + true enabled/disabled state.
     # If JSON-RPC isn't available yet, fall back to the file-write heuristic.
-    is_enabled = jamulus_recording_enabled()
+    is_enabled = jamulus_recording_enabled(ctx)
     if is_enabled is None:
-        is_enabled = _has_recent_recording_writes()
+        is_enabled = _has_recent_recording_writes(ctx=ctx)
 
     desired_active = (action == "start")
 
@@ -622,10 +666,10 @@ def toggle_recording():
         return "OK", 200
 
     # Trigger Jamulus.
-    if jamulus_recording_enabled() is not None:
+    if jamulus_recording_enabled(ctx) is not None:
         try:
             method = "jamulusserver/startRecording" if action == "start" else "jamulusserver/stopRecording"
-            jamulus_rpc_request(method)
+            jamulus_rpc_request(method, ctx=ctx)
         except Exception as e:
             return f"Failed to {action} recording via JSON-RPC: {e}", 500
     else:
@@ -656,23 +700,19 @@ def toggle_recording():
 # ---------- STATUS ENDPOINTS ------------
 @app.route("/get-status")
 def get_status():
-    enabled = jamulus_recording_enabled()
+    ctx = _jamulus_context()
+    enabled = jamulus_recording_enabled(ctx)
     if enabled is None:
-        enabled = _has_recent_recording_writes()
-    # Check if Jamulus server is running
-    jamulus_running = False
-    try:
-        result = subprocess.run(["pgrep", "-x", "jamulus"], capture_output=True)
-        jamulus_running = result.returncode == 0
-    except Exception:
-        pass
+        enabled = _has_recent_recording_writes(ctx=ctx)
+    jamulus_running = bool(get_jamulus_pid(ctx))
     return jsonify({"recording_state": "ON" if enabled else "OFF", "jamulus_running": jamulus_running})
 
 @app.route("/get-session-status")
 def get_session_status():
-    enabled = jamulus_recording_enabled()
+    ctx = _jamulus_context()
+    enabled = jamulus_recording_enabled(ctx)
     if enabled is None:
-        enabled = _has_recent_recording_writes()
+        enabled = _has_recent_recording_writes(ctx=ctx)
     return jsonify({"in_progress": bool(enabled)})
 
 
