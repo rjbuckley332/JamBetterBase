@@ -343,6 +343,14 @@
                 <button class="btn btn-success" onclick="openPracticeWithTrack()">Practice</button>
                 <button class="btn btn-info" onclick="openTunerWithTrack()">Tuner</button>
             </div>
+            <!-- // REGRESSION-CRITICAL: channel selector -->
+            <div class="input-group" style="gap:12px;align-items:center;">
+                <label><b>Channel:</b></label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="radio" name="trackChannel" value="stereo" checked onchange="onChannelChange()"> Stereo</label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="radio" name="trackChannel" value="left" onchange="onChannelChange()"> Left</label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="radio" name="trackChannel" value="right" onchange="onChannelChange()"> Right</label>
+                <span class="help-tooltip" title="For learning tracks with parts split left/right — isolate one side to sing along with">❓</span>
+            </div>
             
             <div id="wavBrowser" style="margin-top:15px;">
                 <div class="browser-header">
@@ -787,6 +795,27 @@
             }
         }
 
+        // Channel selector helpers
+        function getSelectedChannel() {
+            const el = document.querySelector('input[name="trackChannel"]:checked');
+            return el ? el.value : 'stereo';
+        }
+        function setSelectedChannel(ch) {
+            const el = document.querySelector(`input[name="trackChannel"][value="${ch || 'stereo'}"]`);
+            if (el) el.checked = true;
+        }
+        async function onChannelChange() {
+            // Re-queue the current track with new channel so next play uses it
+            const track = document.getElementById('queuedWavDisplay').textContent.trim();
+            if (track && track !== '(none)') {
+                await apiFetch('/wav/queue', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({file: track, channel: getSelectedChannel()})
+                });
+            }
+        }
+
         // Playback
         async function togglePlayback() {
             const btn = document.getElementById('playToggleBtn');
@@ -866,6 +895,7 @@
                 const data = await res.json();
                 const f = (data && data.file) ? data.file : '';
                 document.getElementById('queuedWavDisplay').textContent = f || '(none)';
+                setSelectedChannel(data && data.channel ? data.channel : 'stereo');
             } catch (e) {}
         }
 
@@ -968,7 +998,7 @@
                             await apiFetch('/wav/queue', {
                                 method: 'POST',
                                 headers: {'Content-Type':'application/json'},
-                                body: JSON.stringify({file: wavCurrentPath + f.name})
+                                body: JSON.stringify({file: wavCurrentPath + f.name, channel: getSelectedChannel()})
                             });
                             refreshQueuedWav();
                         };

@@ -1362,8 +1362,12 @@ def wav_queue():
     wav = (d.get('file') or '').strip()
     if not wav:
         return 'Missing file', 400
+    channel = (d.get('channel') or 'stereo').strip().lower()
+    if channel not in ('stereo', 'left', 'right'):
+        channel = 'stereo'
     q = _queue_read()
     q['file'] = wav
+    q['channel'] = channel
     q['set_at'] = _now_local().isoformat()
     _queue_write(q)
     return 'OK'
@@ -1379,7 +1383,10 @@ def wav_play_queued():
 
     # Tell injector TrackBot to play
     from urllib.parse import quote
-    url = f"{TRACKBOT_BASE_URL}/play?file={quote(wav)}"
+    channel = (q.get('channel') or 'stereo').strip().lower()
+    if channel not in ('stereo', 'left', 'right'):
+        channel = 'stereo'
+    url = f"{TRACKBOT_BASE_URL}/play?file={quote(wav)}&channel={channel}"
     code, body = _http_get(url, timeout=20.0)
     if code and 200 <= code < 400:
         return jsonify({'ok': True, 'queued': wav, 'code': code})

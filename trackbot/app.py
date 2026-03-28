@@ -19,11 +19,13 @@ RCLONE_FLAGS = shlex.split(os.environ.get('TRACKBOT_RCLONE_FLAGS', '--config /ho
 JAMULUS_IN_L = os.environ.get('TRACKBOT_JAMULUS_IN_L', 'Jamulus Injector-bot:input left')
 JAMULUS_IN_R = os.environ.get('TRACKBOT_JAMULUS_IN_R', 'Jamulus Injector-bot:input right')
 PLAYER_NAME = os.environ.get('TRACKBOT_PLAYER_NAME', 'trackbot_player')
+METRO_NAME = os.environ.get('TRACKBOT_METRO_NAME', 'trackbot_metro')
 
 state = {
     'lock': threading.Lock(),
     'proc': None,
     'now': None,
+    'channel': 'stereo',
     'last_err': None,
 }
 
@@ -35,11 +37,13 @@ metronome_bpm = None
 metronome_proc = None
 metronome_volume = 0.8
 metronome_sig = "4/4"
+metronome_tone = "soft"
+metronome_freq = 900
 metronome_seq = 0  # incrementing token to cancel stale async linkers
 
 # Debounce metronome updates so sliders can feel realtime without thrashing
 # the audio process on every tiny movement.
-metronome_pending = {'bpm': None, 'vol': None, 'sig': None}
+metronome_pending = {'bpm': None, 'vol': None, 'sig': None, 'tone': None, 'freq': None}
 metronome_debounce_thread = None
 metronome_debounce_evt = threading.Event()
 metronome_debounce_delay = 0.20  # seconds
@@ -85,16 +89,23 @@ def stop_playback():
             except Exception:
                 pass
 
-def start_playback(relpath):
-    """Start playback into Jamulus via JACK.
+def start_playback(relpath, channel='stereo'):
+    """Start playback into Jamulus via PipeWire (pw-cat + pw-link).
 
-    Uses rclone to fetch the file under RCLONE_REMOTE, decodes (if needed) to WAV,
-    then plays via jack-play (jack-tools)."""
+    We fetch/convert to a cached 48k WAV, then play it with pw-cat and link
+    the player outputs to the tenant injector inputs (JAMULUS_IN_L/R).
+
+    channel: 'stereo' (default), 'left', or 'right' — extract one side of the
+    stereo file and play it as mono so the isolated part goes to both ears.
+"""
     stop_playback()
+    channel = (channel or 'stereo').strip().lower()
+    if channel not in ('stereo', 'left', 'right'):
+        channel = 'stereo'
 
     full = f"{RCLONE_REMOTE.rstrip('/')}/{relpath.lstrip('/')}"
 
-    import hashlib, tempfile, time
+    import hashlib, tempfile
     from pathlib import Path
 
     ext = (relpath.rsplit('.', 1)[-1].lower() if '.' in relpath else 'wav')
@@ -102,69 +113,67 @@ def start_playback(relpath):
     tmpdir = Path(tempfile.gettempdir()) / 'trackbot'
     tmpdir.mkdir(parents=True, exist_ok=True)
     src_path = tmpdir / f"src_{h}.{ext}"
-    wav_path = tmpdir / f"play_{h}.wav"
+    # Cache key includes channel so stereo/left/right get separate WAVs
+    chan_suffix = '' if channel == 'stereo' else f'_{channel}'
+    wav_path = tmpdir / f"play_{h}{chan_suffix}.wav"
 
-    # Check if we already have the converted WAV file cached locally
-    if wav_path.exists():
-        # Use cached file - skip download and conversion
-        pass
-    else:
-        # Fetch source to local file (streaming; avoids holding in memory)
-        rclone_cmd = ['rclone','cat',full] + RCLONE_FLAGS
-        with open(src_path, 'wb') as f:
-            r = subprocess.run(rclone_cmd, stdout=f, stderr=subprocess.PIPE)
+    if not wav_path.exists() or wav_path.stat().st_size < 4096:
+        rclone_cmd = ['rclone','copyto',full,str(src_path)] + RCLONE_FLAGS
+        r = subprocess.run(rclone_cmd, capture_output=True)
         if r.returncode != 0:
             raise RuntimeError((r.stderr or b'').decode('utf-8', errors='replace') or 'rclone cat failed')
 
-        # Decode/normalize to 48k WAV stereo (Jamulus-friendly, easy L/R routing)
-        ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-ac','2','-ar','48000', str(wav_path)]
+        if channel == 'left':
+            ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-af','pan=mono|c0=c0','-ac','1','-ar','48000', str(wav_path)]
+        elif channel == 'right':
+            ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-af','pan=mono|c0=c1','-ac','1','-ar','48000', str(wav_path)]
+        else:
+            ffmpeg_cmd = ['ffmpeg','-hide_banner','-loglevel','error','-y','-i', str(src_path), '-ac','2','-ar','48000', str(wav_path)]
         d = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
         if d.returncode != 0:
             raise RuntimeError(d.stderr.strip() or 'ffmpeg decode failed')
 
-    # Play via PipeWire (pw-cat) and explicitly link to the injector inputs.
-    # This avoids JACK timing glitches we observed with gst jackaudiosink on this VPS.
-    # We set node.name=trackbot_player so we can find/link the ports deterministically.
     play_cmd = [
         'pw-cat', '-p',
         '--target', '0',
         '--latency', '200ms',
-        '--properties', 'node.name=trackbot_player',
-        '--properties', 'media.role=Music',
-        str(wav_path)
+        '--properties', f'node.name={PLAYER_NAME}',
+        '--properties', 'media.role=BackingTrack',
+        str(wav_path),
     ]
     proc = subprocess.Popen(play_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=_pw_env())
 
-    # Wait briefly for PipeWire ports to appear, then link to injector inputs
-    out_l = None
-    out_r = None
-    for _ in range(60):
-        out = subprocess.run(['pw-link', '-o'], capture_output=True, text=True, env=_pw_env())
-        if out.returncode == 0:
-            for ln in out.stdout.splitlines():
-                ln = ln.strip()
-                # pw-cat ports are typically named like: trackbot_player:output_FL / output_FR
-                if ln == 'trackbot_player:output_FL':
-                    out_l = ln
-                elif ln == 'trackbot_player:output_FR':
-                    out_r = ln
-        if out_l and out_r:
-            break
-        time.sleep(0.1)
-
-    if out_l and out_r:
-        subprocess.run(['pw-link', out_l, 'Jamulus Injector-bot:input left'], capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', out_r, 'Jamulus Injector-bot:input right'], capture_output=True, text=True, env=_pw_env())
-    else:
+    def _link_async():
+        deadline = time.time() + 6.0
+        out_l = out_r = out_mono = None
+        want_l = f'{PLAYER_NAME}:output_FL'
+        want_r = f'{PLAYER_NAME}:output_FR'
+        want_m = f'{PLAYER_NAME}:output_MONO'
+        while time.time() < deadline:
+            outp = subprocess.run(['pw-link', '-o'], capture_output=True, text=True, env=_pw_env())
+            if outp.returncode == 0:
+                for ln in outp.stdout.splitlines():
+                    ln = ln.strip()
+                    if ln == want_l: out_l = ln
+                    elif ln == want_r: out_r = ln
+                    elif ln == want_m: out_mono = ln
+            if out_l and out_r:
+                subprocess.run(['pw-link', out_l, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_r, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+                return
+            if out_mono:
+                subprocess.run(['pw-link', out_mono, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_mono, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+                return
+            time.sleep(0.1)
         with state['lock']:
-            state['last_err'] = 'pw-cat started but no PipeWire ports found (trackbot_player:output_FL/FR)'
+            state['last_err'] = f'Playback: PipeWire ports not found ({PLAYER_NAME}:output_*).'
+    threading.Thread(target=_link_async, daemon=True).start()
 
     with state['lock']:
         state['proc'] = proc
         state['now'] = relpath
-
-
-
+        state['channel'] = channel
 def _parse_time_signature(sig: str) -> tuple[int, int]:
     s = (sig or '4/4').strip()
     try:
@@ -175,6 +184,22 @@ def _parse_time_signature(sig: str) -> tuple[int, int]:
     if (n, d) not in {(2,4),(3,4),(4,4),(6,8),(12,8)}:
         return (4, 4)
     return (n, d)
+
+
+def _tone_to_freq(tone: str, freq: int | None = None) -> tuple[str, int]:
+    t = (tone or 'soft').strip().lower()
+    presets = {
+        'soft': 700,
+        'bright': 1300,
+        'wood': 900,
+        'cowbell': 1700,
+    }
+    if t not in presets:
+        t = 'soft'
+    f = presets[t] if freq is None else int(freq)
+    if f < 400: f = 400
+    if f > 2000: f = 2000
+    return t, f
 
 
 
@@ -222,8 +247,8 @@ def _read_wav_mono_pcm16(path: str, sr: int) -> bytes:
     return bytes(out)
 
 
-def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4"):
-    """Sample-based metronome rendering using ffmpeg-generated click assets."""
+def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 48000, volume: float = 0.25, signature: str = "4/4", tone: str = "soft", freq: int | None = None):
+    """Metronome rendering with tone presets/frequency independent of time signature."""
     num, den = _parse_time_signature(signature)
 
     quarter_sec = 60.0 / max(1, bpm)
@@ -243,29 +268,34 @@ def _generate_click_wav(wav_path: str, bpm: int, seconds: int = 8, sr: int = 480
     else:
         pattern = ['S', 'W', 'W', 'W']
 
-    strong_path, weak_path = _ensure_click_samples(sr)
-    strong = _read_wav_mono_pcm16(strong_path, sr)
-    weak = _read_wav_mono_pcm16(weak_path, sr)
-    if not strong or not weak:
-        # fail-safe silence file
-        strong = b'\x00\x00' * min(2400, unit_samples)
-        weak = strong
+    tone_name, tone_freq = _tone_to_freq(tone, freq)
 
-    # apply requested volume at render-level too (kept conservative)
-    gain = max(0.0, min(1.0, float(volume)))
-    def scale_pcm16(raw: bytes, factor: float) -> bytes:
+    # Synthesize clicks so tone remains consistent across time signatures.
+    click_dur = min(0.09, unit_sec * 0.6)
+    click_len = max(1, int(click_dur * sr))
+
+    def synth_click(freq_hz: int, amp: float) -> bytes:
+        import math
         out = bytearray()
-        f = max(0.0, min(1.2, factor))
-        for i in range(0, len(raw), 2):
-            v = int.from_bytes(raw[i:i+2], 'little', signed=True)
-            vv = int(max(-32768, min(32767, int(v * f))))
-            out += int(vv).to_bytes(2, 'little', signed=True)
+        for i in range(click_len):
+            env = math.exp(-6.0 * (i / max(1, click_len - 1)))
+            # Preset color by harmonic blend
+            x = 2.0 * math.pi * freq_hz * (i / sr)
+            if tone_name == 'bright':
+                y = math.sin(x) + 0.35 * math.sin(2*x)
+            elif tone_name == 'wood':
+                y = math.sin(x) + 0.18 * math.sin(3*x)
+            elif tone_name == 'cowbell':
+                y = 0.75*math.sin(x) + 0.40*math.sin(2.7*x)
+            else:  # soft
+                y = math.sin(x)
+            v = int(max(-32768, min(32767, y * env * amp * 32767)))
+            out += int(v).to_bytes(2, 'little', signed=True)
         return bytes(out)
 
-    # Make the downbeat more obvious (esp. for compound meters like 6/8):
-    # keep strong at full requested volume, pull weak back a bit.
-    strong = scale_pcm16(strong, gain * 1.00)
-    weak = scale_pcm16(weak, gain * 0.55)
+    gain = max(0.0, min(1.0, float(volume)))
+    strong = synth_click(tone_freq, min(1.0, 1.00 * gain))
+    weak = synth_click(tone_freq, min(1.0, 0.55 * gain))
 
     click_len = min(len(strong)//2, len(weak)//2, unit_samples)
     strong = strong[:click_len*2]
@@ -312,9 +342,9 @@ def _connect_port_to_jamulus(port: str):
 
 
 
-def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
+def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4", tone: str = "soft", freq: int | None = None):
     """Apply metronome change immediately (restarts the audio process)."""
-    global metronome_proc, metronome_bpm, metronome_volume, metronome_sig, metronome_seq
+    global metronome_proc, metronome_bpm, metronome_volume, metronome_sig, metronome_tone, metronome_freq, metronome_seq
 
     bpm = int(bpm)
     if bpm < 40: bpm = 40
@@ -323,12 +353,15 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     if vol < 0: vol = 0.0
     if vol > 1.2: vol = 1.2
     sig = (signature or "4/4").strip()
+    tone_name, tone_freq = _tone_to_freq(tone, freq)
 
     with metronome_lock:
         metronome_seq += 1
         my_seq = metronome_seq
         metronome_volume = vol
         metronome_sig = sig
+        metronome_tone = tone_name
+        metronome_freq = tone_freq
 
     # Stop existing instance before starting a new one
     stop_metronome()
@@ -336,19 +369,19 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
     # Generating a huge WAV on every slider move can block for tens of seconds.
     # Cache a shorter file per BPM and only (re)generate when missing.
     sig_key = sig.replace("/", "-")
-    wav_path = f"/tmp/trackbot_metro_v10_{bpm}_{sig_key}.wav"
+    wav_path = f"/tmp/trackbot_metro_v11_{bpm}_{sig_key}_{tone_name}_{tone_freq}.wav"
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 4096:
-            _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig)
+            _generate_click_wav(wav_path, bpm=bpm, seconds=120, sr=48000, volume=1.0, signature=sig, tone=tone_name, freq=tone_freq)
     except Exception:
         # If generation fails for any reason, fall back to a small file
-        _generate_click_wav(wav_path, bpm=bpm, seconds=15, sr=48000, volume=1.0, signature=sig)
+        _generate_click_wav(wav_path, bpm=bpm, seconds=15, sr=48000, volume=1.0, signature=sig, tone=tone_name, freq=tone_freq)
 
     cmd = [
         'pw-cat', '-p',
         '--target', '0',
         '--latency', '200ms',
-        '--properties', 'node.name=trackbot_metro',
+        '--properties', f'node.name={METRO_NAME}',
         '--properties', 'media.role=Metronome',
         '--volume', f'{vol}',
         wav_path,
@@ -375,20 +408,20 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4"):
             if outp.returncode == 0:
                 for ln in outp.stdout.splitlines():
                     ln = ln.strip()
-                    if ln == 'trackbot_metro:output_FL': out_l = ln
-                    elif ln == 'trackbot_metro:output_FR': out_r = ln
-                    elif ln == 'trackbot_metro:output_MONO': out_mono = ln
+                    if ln == f'{METRO_NAME}:output_FL': out_l = ln
+                    elif ln == f'{METRO_NAME}:output_FR': out_r = ln
+                    elif ln == f'{METRO_NAME}:output_MONO': out_mono = ln
             if out_l and out_r:
-                subprocess.run(['pw-link', out_l, 'Jamulus Injector-bot:input left'], capture_output=True, text=True, env=_pw_env())
-                subprocess.run(['pw-link', out_r, 'Jamulus Injector-bot:input right'], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_l, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_r, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
                 return
             if out_mono:
-                subprocess.run(['pw-link', out_mono, 'Jamulus Injector-bot:input left'], capture_output=True, text=True, env=_pw_env())
-                subprocess.run(['pw-link', out_mono, 'Jamulus Injector-bot:input right'], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_mono, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
+                subprocess.run(['pw-link', out_mono, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
                 return
             time.sleep(0.1)
         with state['lock']:
-            state['last_err'] = 'Metronome: PipeWire ports not found (trackbot_metro:output_*).'
+            state['last_err'] = f'Metronome: PipeWire ports not found ({METRO_NAME}:output_*).'
 
     threading.Thread(target=_link_async, args=(my_seq,), daemon=True).start()
 
@@ -448,14 +481,18 @@ def _ensure_metronome_debouncer():
                 bpm = metronome_pending.get('bpm')
                 vol = metronome_pending.get('vol')
                 sig = metronome_pending.get('sig')
+                tone = metronome_pending.get('tone')
+                freq = metronome_pending.get('freq')
 
             if bpm is None or vol is None:
                 continue
             if sig is None:
                 sig = "4/4"
+            if tone is None:
+                tone = "soft"
 
             try:
-                _apply_metronome_now(bpm, vol, sig)
+                _apply_metronome_now(bpm, vol, sig, tone, freq)
             except Exception as e:
                 with state['lock']:
                     state['last_err'] = f"Metronome update failed: {e}"
@@ -464,13 +501,13 @@ def _ensure_metronome_debouncer():
     metronome_debounce_thread.start()
 
 
-def start_metronome(bpm: int, volume: float = 0.8, signature: str = "4/4"):
+def start_metronome(bpm: int, volume: float = 0.8, signature: str = "4/4", tone: str = "soft", freq: int | None = None):
     """Start/update metronome immediately.
 
     The web UI already debounces slider events, so we don't need extra
     debounce logic here.
     """
-    _apply_metronome_now(bpm, volume, signature)
+    _apply_metronome_now(bpm, volume, signature, tone, freq)
 
 def stop_metronome():
     """Stop metronome precisely: kill pw-cat and unlink its ports."""
@@ -483,13 +520,13 @@ def stop_metronome():
 
     # Unlink any existing metro links (ignore errors).
     try:
-        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_FL', 'Jamulus Injector-bot:input left'],
+        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_FL', JAMULUS_IN_L],
                        capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_FR', 'Jamulus Injector-bot:input right'],
+        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_FR', JAMULUS_IN_R],
                        capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_MONO', 'Jamulus Injector-bot:input left'],
+        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_MONO', JAMULUS_IN_L],
                        capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', '-d', 'trackbot_metro:output_MONO', 'Jamulus Injector-bot:input right'],
+        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_MONO', JAMULUS_IN_R],
                        capture_output=True, text=True, env=_pw_env())
     except Exception:
         pass
@@ -506,7 +543,7 @@ def stop_metronome():
 
     # Hard cleanup any orphan metronome playback processes.
     try:
-        subprocess.run(['pkill', '-f', 'pw-cat -p .*node.name=trackbot_metro'], capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pkill', '-f', f'pw-cat -p .*node.name={METRO_NAME}'], capture_output=True, text=True, env=_pw_env())
     except Exception:
         pass
 
@@ -558,8 +595,12 @@ class Handler(BaseHTTPRequestHandler):
                 bpm = int(q.get('bpm', ['100'])[0] or 100)
                 vol = float(q.get('vol', ['0.8'])[0] or 0.8)
                 sig = (q.get('sig', ['4/4'])[0] or '4/4')
-                start_metronome(bpm, vol, sig)
-                self._send(200, json.dumps({'ok': True, 'bpm': bpm, 'vol': vol, 'sig': sig}), ctype='application/json; charset=utf-8')
+                tone = (q.get('tone', ['soft'])[0] or 'soft')
+                freq_raw = (q.get('freq', [''])[0] or '').strip()
+                freq = int(freq_raw) if freq_raw else None
+                start_metronome(bpm, vol, sig, tone, freq)
+                tone_name, tone_freq = _tone_to_freq(tone, freq)
+                self._send(200, json.dumps({'ok': True, 'bpm': bpm, 'vol': vol, 'sig': sig, 'tone': tone_name, 'freq': tone_freq}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/metronome/stop':
                 stop_metronome()
@@ -570,14 +611,15 @@ class Handler(BaseHTTPRequestHandler):
                 running = bool(proc and proc.poll() is None)
                 with state['lock']:
                     last_err = state.get('last_err')
-                self._send(200, json.dumps({'ok': True, 'running': running, 'bpm': metronome_bpm, 'vol': metronome_volume, 'sig': metronome_sig, 'last_err': last_err}), ctype='application/json; charset=utf-8')
+                self._send(200, json.dumps({'ok': True, 'running': running, 'bpm': metronome_bpm, 'vol': metronome_volume, 'sig': metronome_sig, 'tone': metronome_tone, 'freq': metronome_freq, 'last_err': last_err}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/playback/status':
                 with state['lock']:
                     proc = state['proc']
                     now = state['now']
+                    ch = state.get('channel', 'stereo')
                 running = bool(proc and proc.poll() is None)
-                self._send(200, json.dumps({'ok': True, 'running': running, 'now': now}), ctype='application/json; charset=utf-8')
+                self._send(200, json.dumps({'ok': True, 'running': running, 'now': now, 'channel': ch}), ctype='application/json; charset=utf-8')
                 return
             if u.path == '/api/jamulus/hardreset':
                 try:
@@ -637,7 +679,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not f:
                     self._send(400,'missing file')
                     return
-                start_playback(f)
+                ch = q.get('channel',[None])[0] or 'stereo'
+                start_playback(f, channel=ch)
                 self.send_response(302)
                 self.send_header('Location','/')
                 self.end_headers()
@@ -645,11 +688,12 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/restart':
                 with state['lock']:
                     current = state['now']
+                    current_ch = state.get('channel', 'stereo')
                 if not current:
                     self._send(200, json.dumps({'ok': False, 'error': 'No track currently loaded'}), ctype='application/json; charset=utf-8')
                     return
                 stop_playback()
-                start_playback(current)
+                start_playback(current, channel=current_ch)
                 self._send(200, json.dumps({'ok': True, 'restarted': current}), ctype='application/json; charset=utf-8')
                 return
 
