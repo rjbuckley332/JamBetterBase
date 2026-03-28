@@ -1002,23 +1002,31 @@
                     const inSharedLibrary = isSharedLibraryPath(wavCurrentPath);
 
                     if (isAudioFile(f.name)) {
-                        const loadBtn = document.createElement('button');
-                        loadBtn.className = 'btn btn-sm btn-success';
-                        loadBtn.textContent = 'Load';
-                        loadBtn.onclick = async () => {
-                            if (f.size && f.size > 20 * 1024 * 1024) {
-                                if (!confirm('Large file (' + (f.size / (1024 * 1024)).toFixed(1) + ' MB). May take 10-30s to load. Continue?')) return;
-                            }
-                            await apiFetch('/wav/queue', {
-                                method: 'POST',
-                                headers: {'Content-Type':'application/json'},
-                                body: JSON.stringify({file: wavCurrentPath + f.name, channel: getSelectedChannel()})
-                            });
-                            refreshQueuedWav();
-                        };
-                        actions.appendChild(loadBtn);
+                        if (inSharedLibrary) {
+                            const practiceBtn = document.createElement('button');
+                            practiceBtn.className = 'btn btn-sm btn-success';
+                            practiceBtn.textContent = 'Practice';
+                            practiceBtn.onclick = async () => {
+                                await openPracticeForFile(wavCurrentPath + f.name, getSelectedChannel());
+                            };
+                            actions.appendChild(practiceBtn);
+                        } else {
+                            const loadBtn = document.createElement('button');
+                            loadBtn.className = 'btn btn-sm btn-success';
+                            loadBtn.textContent = 'Load';
+                            loadBtn.onclick = async () => {
+                                if (f.size && f.size > 20 * 1024 * 1024) {
+                                    if (!confirm('Large file (' + (f.size / (1024 * 1024)).toFixed(1) + ' MB). May take 10-30s to load. Continue?')) return;
+                                }
+                                await apiFetch('/wav/queue', {
+                                    method: 'POST',
+                                    headers: {'Content-Type':'application/json'},
+                                    body: JSON.stringify({file: wavCurrentPath + f.name, channel: getSelectedChannel()})
+                                });
+                                refreshQueuedWav();
+                            };
+                            actions.appendChild(loadBtn);
 
-                        if (!inSharedLibrary) {
                             // iPhone-friendly play button (inline stream)
                             const playBtn = document.createElement('a');
                             playBtn.className = 'btn btn-sm btn-info icon-btn';
@@ -1198,12 +1206,30 @@
             setInterval(refreshStatuses, 3000);
         };
 
-        function openPracticeWithTrack() {
-            const track = document.getElementById('queuedWavDisplay').textContent.trim();
-            if (!track || track === '(none)') {
+        async function openPracticeForFile(filePath, channel = 'stereo') {
+            const path = String(filePath || '').trim();
+            if (!path || path === '(none)') {
                 window.open('/practice', '_blank');
-            } else {
-                window.open('/practice?s3=' + encodeURIComponent(track), '_blank');
+                return;
+            }
+            if (isSharedLibraryPath(path)) {
+                const res = await apiFetch('/wav/practice-link?file=' + encodeURIComponent(path) + '&channel=' + encodeURIComponent(channel));
+                const data = await res.json();
+                if (!data.ok || !data.url) {
+                    throw new Error(data.error || 'Could not open practice track');
+                }
+                window.open(data.url, '_blank');
+                return;
+            }
+            window.open('/practice?s3=' + encodeURIComponent(path) + '&channel=' + encodeURIComponent(channel), '_blank');
+        }
+
+        async function openPracticeWithTrack() {
+            const track = document.getElementById('queuedWavDisplay').textContent.trim();
+            try {
+                await openPracticeForFile(track, getSelectedChannel());
+            } catch (e) {
+                alert(e && e.message ? e.message : 'Could not open practice app');
             }
         }
 

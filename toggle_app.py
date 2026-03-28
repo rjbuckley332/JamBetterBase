@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template, make_response, session, redirect, send_file
-import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile, shutil, re
+import os, subprocess, json, glob, socket, threading, time, math, struct, tempfile, zipfile, shutil, re, hmac, hashlib
 import fcntl
 import boto3
 from datetime import datetime, timedelta, timezone
@@ -500,6 +500,43 @@ def _s3_presign(key: str, expires: int = 900, attachment: bool = True) -> dict:
         return {"ok": True, "url": url, "key": key}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _is_shared_library(area: str | None, rel: str | None) -> bool:
+    return area == 'recordings' and str(rel or '').startswith('library/')
+
+
+def _practice_sig_payload(tenant: str, file_path: str, exp: int) -> str:
+    return f"practice|{tenant}|{int(exp)}|{file_path}"
+
+
+def _practice_sig(tenant: str, file_path: str, exp: int) -> str:
+    payload = _practice_sig_payload(tenant, file_path, exp).encode('utf-8')
+    return hmac.new(app.secret_key.encode('utf-8'), payload, hashlib.sha256).hexdigest()
+
+
+def _verify_practice_sig(tenant: str, file_path: str, exp_value: str, sig: str) -> bool:
+    try:
+        exp = int(str(exp_value or '0'))
+    except Exception:
+        return False
+    if exp < int(time.time()):
+        return False
+    expected = _practice_sig(tenant, file_path, exp)
+    return bool(sig) and hmac.compare_digest(expected, str(sig))
+
+
+def _practice_link_for_file(file_path: str, channel: str = 'stereo', expires_in: int = 900) -> str:
+    tenant = _tenant_slug_from_request()
+    exp = int(time.time()) + int(expires_in)
+    sig = _practice_sig(tenant, file_path, exp)
+    q = urllib.parse.urlencode({
+        's3': file_path,
+        'channel': channel,
+        'exp': str(exp),
+        'sig': sig,
+    })
+    return f"/practice?{q}"
 
 
 def _jamulus_context() -> dict:
@@ -1407,6 +1444,9 @@ def wav_queue():
     wav = (d.get('file') or '').strip()
     if not wav:
         return 'Missing file', 400
+    area, rel = _safe_library_file_path(wav)
+    if _is_shared_library(area, rel):
+        return jsonify({'ok': False, 'error': 'shared library files are practice-only'}), 403
     channel = (d.get('channel') or 'stereo').strip().lower()
     if channel not in ('stereo', 'left', 'right'):
         channel = 'stereo'
@@ -1514,6 +1554,46 @@ def wav_stream():
         return jsonify({"ok": False, "error": "file not allowed for this tenant"}), 403
     if area == 'recordings' and rel.startswith('library/'):
         return jsonify({"ok": False, "error": "streaming disabled for shared library"}), 403
+    key = _lib_prefix(area, '') + rel
+    res = _s3_presign(key, expires=300, attachment=False)
+    if not res.get("ok"):
+        return jsonify(res), 403
+    if (request.args.get("format") or "").strip().lower() == "json":
+        return jsonify(res)
+    return redirect(res["url"])
+
+
+@app.route("/wav/practice-link")
+def wav_practice_link():
+    ok, resp = _require_passcode()
+    if not ok: return resp
+    file_path = (request.args.get("file") or "").strip()
+    if not file_path:
+        return jsonify({"ok": False, "error": "missing file"}), 400
+    area, rel = _safe_library_file_path(file_path)
+    if not _is_shared_library(area, rel):
+        return jsonify({"ok": False, "error": "practice-only links are only for shared library files"}), 403
+    channel = (request.args.get('channel') or 'stereo').strip().lower()
+    if channel not in ('stereo', 'left', 'right'):
+        channel = 'stereo'
+    return jsonify({"ok": True, "url": _practice_link_for_file(file_path, channel=channel, expires_in=900)})
+
+
+@app.route("/wav/practice-stream")
+def wav_practice_stream():
+    ok, resp = _require_passcode()
+    if not ok: return resp
+    file_path = (request.args.get("file") or "").strip()
+    if not file_path:
+        return jsonify({"ok": False, "error": "missing file"}), 400
+    area, rel = _safe_library_file_path(file_path)
+    if not _is_shared_library(area, rel):
+        return jsonify({"ok": False, "error": "file not allowed for practice stream"}), 403
+    tenant = _tenant_slug_from_request()
+    exp = (request.args.get('exp') or '').strip()
+    sig = (request.args.get('sig') or '').strip()
+    if not _verify_practice_sig(tenant, file_path, exp, sig):
+        return jsonify({"ok": False, "error": "invalid or expired practice token"}), 403
     key = _lib_prefix(area, '') + rel
     res = _s3_presign(key, expires=300, attachment=False)
     if not res.get("ok"):
