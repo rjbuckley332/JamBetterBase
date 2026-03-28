@@ -312,20 +312,20 @@ def _apply_tenant_scope(area: str, sub: str, *, for_listing: bool = False) -> tu
     """Apply host-based tenant scoping to library paths.
 
     recordings on tenant hosts are constrained to recordings/<tenant>/..., with one
-    deliberate shared exception: recordings/temp/ remains visible so users can access
-    uploaded backing tracks from the tenant UI.
+    deliberate shared exception: recordings/library/ remains visible so all tenants
+    can access the shared song library.
 
     - listing recordings/ on a tenant host is rewritten to recordings/<tenant>/
     - paths already rooted at recordings/<tenant>/ are allowed
     - bare tenant-relative paths like recordings/2026-03-27/ are rewritten to recordings/<tenant>/2026-03-27/
-    - shared utility path recordings/temp/ is allowed unchanged
+    - shared utility path recordings/library/ is allowed unchanged
     - explicit paths for a different tenant are rejected
     tracks remain shared unless explicitly scoped elsewhere
     """
     tenant = _tenant_slug_from_request()
     sub = (sub or '').strip('/').replace('\\', '/')
     if area == 'recordings' and tenant:
-        shared_roots = set()  # temp is now per-tenant
+        shared_roots = {'library'}
         hidden_roots = {'trash', '.trash', '.archived'}
         if not sub:
             sub = tenant
@@ -1354,11 +1354,20 @@ def wav_browse():
     try:
         prefix = _lib_prefix(area, sub)
         result = _s3_list(prefix)
+        dirs = list(result.get('dirs', []))
+        files = result.get('files', [])
+
+        # On tenant hosts, expose the shared recordings/library root alongside the
+        # tenant-scoped recordings tree so every tenant can browse global content.
+        if area == 'recordings' and (sub or '') == ((_tenant_slug_from_request() or '') + '/'):
+            if 'library' not in dirs:
+                dirs.insert(0, 'library')
+
         return jsonify({
             "ok": True,
             "path": f"{area}/" + (sub or ''),
-            "dirs": result.get('dirs', []),
-            "files": result.get('files', [])
+            "dirs": dirs,
+            "files": files
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

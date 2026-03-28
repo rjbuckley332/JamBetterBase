@@ -112,7 +112,7 @@ def start_playback(relpath, channel='stereo'):
         stripped = stripped[len("recordings/"):]
     remote_base = RCLONE_REMOTE.rstrip("/")
     first_seg = stripped.split("/", 1)[0].lower() if "/" in stripped else stripped.lower()
-    shared_prefixes = {"tracks"}  # temp is now per-tenant
+    shared_prefixes = {"tracks", "library"}  # shared global content roots
     remote_parts = remote_base.rsplit("/recordings/", 1)
     if len(remote_parts) == 2 and remote_parts[1]:
         remote_tenant = remote_parts[1].rstrip("/")
