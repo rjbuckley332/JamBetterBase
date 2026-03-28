@@ -999,6 +999,8 @@
                     const actions = document.createElement('div');
                     actions.className = 'file-actions';
                     
+                    const inSharedLibrary = isSharedLibraryPath(wavCurrentPath);
+
                     if (isAudioFile(f.name)) {
                         const loadBtn = document.createElement('button');
                         loadBtn.className = 'btn btn-sm btn-success';
@@ -1016,18 +1018,18 @@
                         };
                         actions.appendChild(loadBtn);
 
-                        // iPhone-friendly play button (inline stream)
-                        const playBtn = document.createElement('a');
-                        playBtn.className = 'btn btn-sm btn-info icon-btn';
-                        playBtn.textContent = '▶︎';
-                        playBtn.title = 'Play';
-                        playBtn.href = '/wav/stream?file=' + encodeURIComponent(wavCurrentPath + f.name);
-                        playBtn.target = '_blank';
-                        playBtn.rel = 'noopener';
-                        actions.appendChild(playBtn);
+                        if (!inSharedLibrary) {
+                            // iPhone-friendly play button (inline stream)
+                            const playBtn = document.createElement('a');
+                            playBtn.className = 'btn btn-sm btn-info icon-btn';
+                            playBtn.textContent = '▶︎';
+                            playBtn.title = 'Play';
+                            playBtn.href = '/wav/stream?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                            playBtn.target = '_blank';
+                            playBtn.rel = 'noopener';
+                            actions.appendChild(playBtn);
+                        }
                     }
-
-                    const inSharedLibrary = isSharedLibraryPath(wavCurrentPath);
 
                     if (!inSharedLibrary) {
                         // Download button (all file types)

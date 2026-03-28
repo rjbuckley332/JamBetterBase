@@ -1512,6 +1512,8 @@ def wav_stream():
     area, rel = _safe_library_file_path(file_path)
     if not area:
         return jsonify({"ok": False, "error": "file not allowed for this tenant"}), 403
+    if area == 'recordings' and rel.startswith('library/'):
+        return jsonify({"ok": False, "error": "streaming disabled for shared library"}), 403
     key = _lib_prefix(area, '') + rel
     res = _s3_presign(key, expires=300, attachment=False)
     if not res.get("ok"):
