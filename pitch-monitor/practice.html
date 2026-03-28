@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>JamBetter Practice Mode</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #111118;
+    border-bottom: 1px solid #222;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #top-bar h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #aaa;
+  }
+
+  #top-bar h1 span { color: #4ecdc4; }
+
+  .btn {
+    padding: 7px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  #play-btn { background: #4ecdc4; color: #0a0a0f; }
+  #play-btn:hover { background: #3dbdb5; }
+  #play-btn.active { background: #e74c3c; }
+  #play-btn.active:hover { background: #c0392b; }
+
+  /* load-btn and s3-browser removed — tracks come via ?s3= */
+
+  .bar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ---- Track info ---- */
+  #track-info {
+    text-align: center;
+    padding: 4px 16px;
+    background: #0d0d14;
+    font-size: 13px;
+    color: #666;
+    flex-shrink: 0;
+  }
+
+  #track-info .title { color: #4ecdc4; font-weight: 600; }
+
+  /* ---- Big tuner readout ---- */
+  #tuner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0 6px;
+    flex-shrink: 0;
+    background: #0d0d14;
+  }
+
+  #note-name {
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    line-height: 1;
+    color: #555;
+    transition: color 0.15s;
+  }
+
+  #note-name.on-pitch { color: #2ecc71; }
+  #note-name.near-pitch { color: #f1c40f; }
+  #note-name.off-pitch { color: #e74c3c; }
+
+  #cents-display {
+    font-size: 24px;
+    font-weight: 600;
+    margin-top: 2px;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #score-display {
+    font-size: 14px;
+    margin-top: 4px;
+    color: #666;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #score-display .good { color: #2ecc71; font-weight: 700; }
+
+  /* ---- Cents meter bar ---- */
+  #meter-wrap {
+    width: 70%;
+    max-width: 360px;
+    height: 16px;
+    margin: 6px auto 2px;
+    position: relative;
+    background: #181820;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  #meter-center {
+    position: absolute; left: 50%; top: 0; bottom: 0;
+    width: 2px; background: #444; transform: translateX(-1px); z-index: 2;
+  }
+
+  #meter-bar {
+    position: absolute; top: 2px; bottom: 2px; width: 12px;
+    border-radius: 6px; background: #555; left: 50%;
+    transform: translateX(-6px); transition: left 0.07s linear, background 0.15s; z-index: 3;
+  }
+
+  /* ---- Timeline canvas ---- */
+  #timeline-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #08080d;
+  }
+
+  #timeline { width: 100%; height: 100%; display: block; }
+
+  /* ---- Progress bar ---- */
+  #progress-wrap {
+    height: 24px;
+    background: #111118;
+    border-top: 1px solid #222;
+    border-bottom: 1px solid #222;
+    flex-shrink: 0;
+    position: relative;
+    cursor: pointer;
+  }
+
+  #progress-bar {
+    height: 100%;
+    background: rgba(78, 205, 196, 0.25);
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+
+  #progress-time {
+    position: absolute;
+    right: 8px;
+    top: 3px;
+    font-size: 12px;
+    color: #666;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Settings row ---- */
+  #settings {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 6px 12px;
+    background: #111118;
+    border-top: 1px solid #222;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  #settings label { font-size: 11px; color: #666; }
+
+  #settings select, #settings input[type=range] {
+    background: #1a1a24; color: #ccc; border: 1px solid #333;
+    border-radius: 4px; padding: 2px 5px; font-size: 11px;
+  }
+
+  .setting-group { display: flex; align-items: center; gap: 3px; }
+
+  /* Legend */
+  #legend {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding: 4px;
+    font-size: 11px;
+    color: #666;
+    background: #0d0d14;
+    flex-shrink: 0;
+  }
+
+  #legend .swatch {
+    display: inline-block;
+    width: 16px; height: 4px;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-right: 3px;
+  }
+
+  /* S3 browser + file input removed — tracks arrive via ?s3= from tenant page */
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <h1>🎤 <span>JamBetter</span> Practice</h1>
+  <div class="bar-group">
+    <button class="btn" id="play-btn" disabled>▶ Play & Sing</button>
+  </div>
+</div>
+
+<div id="track-info">Loading track…</div>
+
+<div id="tuner">
+  <div id="note-name">—</div>
+  <div id="cents-display">— ¢</div>
+  <div id="score-display">Score: <span class="good">—</span></div>
+  <div id="meter-wrap">
+    <div id="meter-center"></div>
+    <div id="meter-bar"></div>
+  </div>
+</div>
+
+<div id="legend">
+  <span><span class="swatch" style="background:#4ecdc4;"></span> Reference</span>
+  <span><span class="swatch" style="background:#2ecc71;"></span> You (on pitch)</span>
+  <span><span class="swatch" style="background:#f1c40f;"></span> You (close)</span>
+  <span><span class="swatch" style="background:#e74c3c;"></span> You (off)</span>
+</span>
+</div>
+
+<div id="timeline-wrap">
+  <canvas id="timeline"></canvas>
+</div>
+
+<div id="progress-wrap" title="Click to seek">
+  <div id="progress-bar"></div>
+  <div id="progress-time">0:00 / 0:00</div>
+</div>
+
+<div id="settings">
+  <div class="setting-group">
+    <label>Window:</label>
+    <select id="window-select">
+      <option value="8">8 sec</option>
+      <option value="12" selected>12 sec</option>
+      <option value="15">15 sec</option>
+      <option value="20">20 sec</option>
+    </select>
+  </div>
+  <div class="setting-group">
+    <label>Mic Gain:</label>
+    <input type="range" id="mic-gain" min="1" max="8" step="0.5" value="2">
+    <span id="mic-gain-label" style="font-size:11px;color:#888;min-width:22px;">2×</span>
+  </div>
+  <div class="setting-group">
+    <label>Sensitivity:</label>
+    <input type="range" id="sensitivity" min="0.005" max="0.08" step="0.005" value="0.02">
+  </div>
+  <div class="setting-group">
+    <label>Ref volume:</label>
+    <input type="range" id="ref-volume" min="0" max="1" step="0.05" value="0.7">
+  </div>
+  <div class="setting-group">
+    <label>Ch:</label>
+    <div class="channel-btns" id="channel-btns">
+      <button data-ch="stereo" class="active">Stereo</button>
+      <button data-ch="left">L</button>
+      <button data-ch="right">R</button>
+    </div>
+  </div>
+</div>
+
+<!-- Track is loaded via ?s3= parameter from the tenant page -->
+
+<script>
+// ============================================================
+//  YIN pitch detection
+// ============================================================
+function yin(buf, sampleRate, threshold) {
+  const halfLen = Math.floor(buf.length / 2);
+  const yinBuf = new Float32Array(halfLen);
+  yinBuf[0] = 0;
+  for (let tau = 1; tau < halfLen; tau++) {
+    let sum = 0;
+    for (let i = 0; i < halfLen; i++) { const d = buf[i] - buf[i + tau]; sum += d * d; }
+    yinBuf[tau] = sum;
+  }
+  yinBuf[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau < halfLen; tau++) {
+    runningSum += yinBuf[tau];
+    yinBuf[tau] = yinBuf[tau] * tau / runningSum;
+  }
+  let tauEstimate = -1;
+  for (let tau = 2; tau < halfLen; tau++) {
+    if (yinBuf[tau] < threshold) {
+      while (tau + 1 < halfLen && yinBuf[tau + 1] < yinBuf[tau]) tau++;
+      tauEstimate = tau; break;
+    }
+  }
+  if (tauEstimate === -1) return -1;
+  const s0 = tauEstimate > 0 ? yinBuf[tauEstimate - 1] : yinBuf[tauEstimate];
+  const s1 = yinBuf[tauEstimate];
+  const s2 = tauEstimate + 1 < halfLen ? yinBuf[tauEstimate + 1] : yinBuf[tauEstimate];
+  let betterTau = tauEstimate;
+  const denom = 2 * s1 - s2 - s0;
+  if (denom !== 0) betterTau = tauEstimate + (s2 - s0) / (2 * denom);
+  return sampleRate / betterTau;
+}
+
+// ============================================================
+//  Music helpers
+// ============================================================
+const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+
+function freqToNote(freq) {
+  const semitones = 12 * Math.log2(freq / 440);
+  const midi = Math.round(semitones) + 69;
+  const cents = Math.round((semitones - Math.round(semitones)) * 100);
+  const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+  const octave = Math.floor(midi / 12) - 1;
+  return { name, octave, midi, cents, freq };
+}
+
+function noteToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + String(sec).padStart(2, '0');
+}
+
+// ============================================================
+//  State
+// ============================================================
+let audioCtx, analyser, micSource, micStream, gainNode;
+let audioElement = null;
+let activeChannel = new URLSearchParams(window.location.search).get('channel') || 'stereo';
+let mediaSourceNode = null;
+let bufferSource = null;
+let bufPlayStartCtx = 0;
+let bufPlayOffset = 0;
+let bufGainNode = null;
+let running = false;
+let refData = null;       // { title, duration, pitchData: [{t, freq, midi, note, cents}] }
+let refLoMidi = 48, refHiMidi = 72;
+let livePitchHistory = [];
+let windowSec = 12;
+let sensitivity = 0.02;
+let micGain = 2;
+let animFrame;
+let scoreHits = 0, scoreMisses = 0;
+
+const playBtn     = document.getElementById('play-btn');
+// loadBtn removed — tracks arrive via ?s3= from tenant page
+const noteNameEl  = document.getElementById('note-name');
+const centsEl     = document.getElementById('cents-display');
+const scoreEl     = document.querySelector('#score-display .good');
+const meterBar    = document.getElementById('meter-bar');
+const trackInfoEl = document.getElementById('track-info');
+const progressBar = document.getElementById('progress-bar');
+const progressTime = document.getElementById('progress-time');
+const canvas      = document.getElementById('timeline');
+const ctx         = canvas.getContext('2d');
+
+// ============================================================
+//  Load preloaded reference JSON (check URL params or default)
+// ============================================================
+// Initialize channel selector from URL param
+(function initChannelBtns() {
+  const btns = document.querySelectorAll('#channel-btns button');
+  btns.forEach(b => {
+    b.classList.toggle('active', b.dataset.ch === activeChannel);
+    b.addEventListener('click', () => {
+      activeChannel = b.dataset.ch;
+      btns.forEach(x => x.classList.toggle('active', x === b));
+      applyChannelRouting();
+    });
+  });
+})();
+
+async function tryPreload() {
+  const params = new URLSearchParams(window.location.search);
+
+  // Highest priority: load a tenant S3 audio file directly
+  const s3Path = params.get('s3');
+  if (s3Path) {
+    try {
+      await loadS3Track(s3Path);
+      return;
+    } catch (e) {
+      console.log('S3 preload failed:', e);
+    }
+  }
+
+  // Next: pre-extracted JSON reference via ?ref=
+  let refUrl = params.get('ref');
+
+  // Default: try bundled Smile-Rich.json in same directory
+  if (!refUrl) refUrl = 'Smile-Rich.json';
+
+  try {
+    const resp = await fetch(refUrl);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.pitchData) {
+      loadRefData(data, refUrl.replace('.json', ''));
+    }
+  } catch(e) {
+    console.log('No preloaded reference found');
+    if (!s3Path) {
+      trackInfoEl.innerHTML = 'No track selected — go back to your <a href="/" style="color:#4ecdc4;">JamBetter page</a> and tap <strong>Practice</strong> on a track';
+    }
+  }
+}
+
+function loadRefData(data, audioHint) {
+  refData = data;
+  
+  // Compute range from reference
+  const voiced = data.pitchData.filter(p => p.midi > 0);
+  if (voiced.length > 0) {
+    const midis = voiced.map(p => p.midi);
+    refLoMidi = Math.min(...midis) - 3;
+    refHiMidi = Math.max(...midis) + 3;
+  }
+  
+  trackInfoEl.innerHTML = `<span class="title">${data.title || 'Reference Track'}</span> · ${fmtTime(data.duration)} · ${voiced.length} notes detected`;
+  playBtn.disabled = false;
+  progressTime.textContent = `0:00 / ${fmtTime(data.duration)}`;
+  
+  drawTimeline(0);
+}
+
+// (File browser removed — tracks arrive via ?s3= param from tenant page)
+
+async function extractPitchAsync(samples, sr) {
+  const frameLen = 2048;
+  const hop = 882;  // ~50 fps
+  const nFrames = Math.floor((samples.length - frameLen) / hop);
+  const results = [];
+  const threshold = 0.15;
+  
+  for (let i = 0; i < nFrames; i++) {
+    const start = i * hop;
+    const frame = samples.slice(start, start + frameLen);
+    const t = start / sr;
+    
+    // RMS check
+    let rms = 0;
+    for (let j = 0; j < frame.length; j++) rms += frame[j] * frame[j];
+    rms = Math.sqrt(rms / frame.length);
+    
+    if (rms < 0.005) {
+      results.push({ t: Math.round(t * 1000) / 1000, freq: -1, midi: -1, note: null, cents: 0 });
+    } else {
+      const freq = yin(frame, sr, threshold);
+      if (freq > 60 && freq < 1200) {
+        const n = freqToNote(freq);
+        results.push({ t: Math.round(t * 1000) / 1000, freq: Math.round(freq * 10) / 10, midi: n.midi, note: n.name + n.octave, cents: n.cents });
+      } else {
+        results.push({ t: Math.round(t * 1000) / 1000, freq: -1, midi: -1, note: null, cents: 0 });
+      }
+    }
+    
+    // Yield every 500 frames to keep UI responsive
+    if (i % 500 === 0) {
+      trackInfoEl.innerHTML = `Analyzing... ${Math.round(i / nFrames * 100)}%`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  
+  return results;
+}
+
+// ============================================================
+//  Controls
+// ============================================================
+document.getElementById('window-select').addEventListener('change', e => {
+  windowSec = parseInt(e.target.value, 10);
+});
+
+document.getElementById('sensitivity').addEventListener('input', e => {
+  sensitivity = parseFloat(e.target.value);
+});
+
+document.getElementById('mic-gain').addEventListener('input', e => {
+  micGain = parseFloat(e.target.value);
+  document.getElementById('mic-gain-label').textContent = micGain + '×';
+  if (gainNode) gainNode.gain.value = micGain;
+});
+
+document.getElementById('ref-volume').addEventListener('input', e => {
+  if (bufGainNode) bufGainNode.gain.value = parseFloat(e.target.value);
+});
+
+// Progress bar seeking
+document.getElementById('progress-wrap').addEventListener('click', (e) => {
+  if (!decodedBuffer || !refData || !running) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  startBufferPlayback(pct * refData.duration);
+});
+
+// ============================================================
+//  Play / Stop
+// ============================================================
+// ============================================================
+//  Channel routing via Web Audio ChannelSplitter
+// ============================================================
+function applyChannelRouting() {
+  if (!audioCtx || !bufGainNode) return;
+  try { bufGainNode.disconnect(); } catch(e) {}
+  
+  if (activeChannel === 'stereo') {
+    // Pass both channels through as-is
+    bufGainNode.connect(audioCtx.destination);
+  } else {
+    // Extract one channel and send to both L+R speakers
+    const splitter = audioCtx.createChannelSplitter(2);
+    const merger = audioCtx.createChannelMerger(2);
+    bufGainNode.connect(splitter);
+    const chIdx = activeChannel === 'left' ? 0 : 1;
+    // Send chosen channel to both output L and R
+    splitter.connect(merger, chIdx, 0);
+    splitter.connect(merger, chIdx, 1);
+    merger.connect(audioCtx.destination);
+  }
+}
+
+function getBufferPlaybackTime() {
+  if (!audioCtx || !running) return bufPlayOffset;
+  return bufPlayOffset + (audioCtx.currentTime - bufPlayStartCtx);
+}
+
+async function startBufferPlayback(offset) {
+  if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+  if (bufferSource) { try { bufferSource.stop(); } catch(e) {} }
+  bufferSource = audioCtx.createBufferSource();
+  bufferSource.buffer = decodedBuffer;
+  bufGainNode = audioCtx.createGain();
+  bufGainNode.gain.value = parseFloat(document.getElementById('ref-volume').value);
+  bufferSource.connect(bufGainNode);
+  applyChannelRouting();
+  bufPlayOffset = offset || 0;
+  bufPlayStartCtx = audioCtx.currentTime;
+  bufferSource.start(0, bufPlayOffset);
+  bufferSource.onended = () => {
+    if (running) stopAll();
+  };
+}
+
+playBtn.addEventListener('click', async () => {
+  if (running) { stopAll(); return; }
+  
+  // Set up mic
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+  } catch(e) {
+    alert('Microphone access denied.');
+    return;
+  }
+  
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+  // iOS Safari requires explicit resume from user gesture
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 4096;
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = micGain;
+  micSource = audioCtx.createMediaStreamSource(micStream);
+  micSource.connect(gainNode);
+  gainNode.connect(analyser);
+  
+  // Play from decoded buffer (avoids CORS issues with presigned S3 URLs)
+  running = true;
+  livePitchHistory = [];
+  scoreHits = 0;
+  scoreMisses = 0;
+  playBtn.textContent = '⏹ Stop';
+  playBtn.classList.add('active');
+  
+  if (decodedBuffer) {
+    startBufferPlayback(0);
+  }
+  
+  tick();
+});
+
+function stopAll() {
+  running = false;
+  playBtn.textContent = '▶ Play & Sing';
+  playBtn.classList.remove('active');
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (bufferSource) { try { bufferSource.stop(); } catch(e) {} bufferSource = null; }
+  if (micSource) micSource.disconnect();
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  if (audioElement) audioElement.pause();
+  noteNameEl.textContent = '—';
+  noteNameEl.className = '';
+  centsEl.textContent = '— ¢';
+  meterBar.style.left = '50%';
+  meterBar.style.background = '#555';
+}
+
+// ============================================================
+//  Main loop
+// ============================================================
+function tick() {
+  if (!running) return;
+  animFrame = requestAnimationFrame(tick);
+  
+  const playbackTime = decodedBuffer ? getBufferPlaybackTime() : 0;
+  const duration = refData ? refData.duration : 0;
+  
+  // Auto-stop at end
+  if (decodedBuffer && getBufferPlaybackTime() >= decodedBuffer.duration) {
+    stopAll();
+    return;
+  }
+  
+  // Update progress
+  if (duration > 0) {
+    progressBar.style.width = (playbackTime / duration * 100) + '%';
+    progressTime.textContent = `${fmtTime(playbackTime)} / ${fmtTime(duration)}`;
+  }
+  
+  // Read mic
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  
+  let rms = 0;
+  for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / buf.length);
+  
+  if (rms < 0.008) {
+    livePitchHistory.push({ t: playbackTime, freq: -1, midi: -1, cents: 0 });
+    noteNameEl.textContent = '—';
+    noteNameEl.className = '';
+    centsEl.textContent = '— ¢';
+    meterBar.style.left = '50%';
+    meterBar.style.background = '#555';
+  } else {
+    const freq = yin(buf, audioCtx.sampleRate, sensitivity);
+    if (freq > 0 && freq > 60 && freq < 1200) {
+      const note = freqToNote(freq);
+      livePitchHistory.push({ t: playbackTime, freq, midi: note.midi, cents: note.cents });
+      
+      noteNameEl.textContent = note.name + note.octave;
+      const absCents = Math.abs(note.cents);
+      if (absCents <= 8) {
+        noteNameEl.className = 'on-pitch';
+        meterBar.style.background = '#2ecc71';
+      } else if (absCents <= 20) {
+        noteNameEl.className = 'near-pitch';
+        meterBar.style.background = '#f1c40f';
+      } else {
+        noteNameEl.className = 'off-pitch';
+        meterBar.style.background = '#e74c3c';
+      }
+      const sign = note.cents >= 0 ? '+' : '';
+      centsEl.textContent = `${sign}${note.cents} ¢`;
+      
+      const pct = Math.max(0, Math.min(100, (note.cents + 50) / 100 * 100));
+      meterBar.style.left = pct + '%';
+      
+      // Score: compare to reference
+      if (refData) {
+        const refNote = getRefNoteAt(playbackTime);
+        if (refNote && refNote.midi > 0) {
+          const semiDiff = Math.abs(note.midi - refNote.midi);
+          const centDiff = semiDiff === 0 ? Math.abs(note.cents - refNote.cents) : 100;
+          if (semiDiff === 0 && centDiff <= 30) {
+            scoreHits++;
+          } else if (semiDiff <= 1) {
+            // Within a semitone — partial credit
+            scoreHits += 0.3;
+            scoreMisses += 0.7;
+          } else {
+            scoreMisses++;
+          }
+        }
+      }
+    } else {
+      livePitchHistory.push({ t: playbackTime, freq: -1, midi: -1, cents: 0 });
+    }
+  }
+  
+  // Update score
+  const totalAttempts = scoreHits + scoreMisses;
+  if (totalAttempts > 10) {
+    const pctScore = Math.round(scoreHits / totalAttempts * 100);
+    scoreEl.textContent = pctScore + '%';
+  }
+  
+  drawTimeline(playbackTime);
+}
+
+// ============================================================
+//  Get reference note at a given time
+// ============================================================
+function getRefNoteAt(t) {
+  if (!refData || !refData.pitchData.length) return null;
+  
+  // Binary search for closest frame
+  const data = refData.pitchData;
+  let lo = 0, hi = data.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (data[mid].t < t) lo = mid + 1;
+    else hi = mid;
+  }
+  
+  // Check neighbors for closest
+  const idx = lo;
+  if (idx >= data.length) return data[data.length - 1];
+  if (idx > 0 && Math.abs(data[idx - 1].t - t) < Math.abs(data[idx].t - t)) {
+    return data[idx - 1];
+  }
+  return data[idx];
+}
+
+// ============================================================
+//  Timeline drawing
+// ============================================================
+function drawTimeline(playbackTime) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const w = rect.width;
+  const h = rect.height;
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  ctx.clearRect(0, 0, w, h);
+
+  const loMidi = refLoMidi;
+  const hiMidi = refHiMidi;
+  const midiSpan = hiMidi - loMidi;
+  const padLeft = 44;
+  const padRight = 8;
+  const plotW = w - padLeft - padRight;
+  const plotH = h;
+  
+  const tStart = playbackTime - windowSec * 0.3;  // 30% behind, 70% ahead
+  const tEnd = tStart + windowSec;
+
+  // ---- Grid ----
+  for (let midi = loMidi; midi <= hiMidi; midi++) {
+    const y = plotH - ((midi - loMidi) / midiSpan) * plotH;
+    const noteName = NOTE_NAMES[((midi % 12) + 12) % 12];
+    const isNatural = !noteName.includes('♯');
+
+    ctx.strokeStyle = isNatural ? '#1a1a24' : '#111118';
+    ctx.lineWidth = isNatural ? 1 : 0.5;
+    ctx.beginPath();
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(w - padRight, y);
+    ctx.stroke();
+
+    if (isNatural) {
+      const octave = Math.floor(midi / 12) - 1;
+      ctx.fillStyle = '#444';
+      ctx.font = '11px -apple-system, system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(noteName + octave, padLeft - 6, y);
+    }
+  }
+
+  // ---- Now line (playback position) ----
+  const nowX = padLeft + (playbackTime - tStart) / windowSec * plotW;
+  ctx.strokeStyle = 'rgba(78, 205, 196, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(nowX, 0);
+  ctx.lineTo(nowX, plotH);
+  ctx.stroke();
+
+  // Glow around now line
+  const grad = ctx.createLinearGradient(nowX - 15, 0, nowX + 15, 0);
+  grad.addColorStop(0, 'rgba(78, 205, 196, 0)');
+  grad.addColorStop(0.5, 'rgba(78, 205, 196, 0.06)');
+  grad.addColorStop(1, 'rgba(78, 205, 196, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(nowX - 15, 0, 30, plotH);
+
+  // ---- Draw reference pitch (coming from the right) ----
+  if (refData && refData.pitchData.length > 0) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    let prevPt = null;
+    const data = refData.pitchData;
+    
+    for (let i = 0; i < data.length; i++) {
+      const p = data[i];
+      if (p.t < tStart - 0.1 || p.t > tEnd + 0.1) {
+        if (p.t > tEnd + 0.1) break;
+        prevPt = null;
+        continue;
+      }
+      if (p.freq <= 0 || p.midi <= 0) { prevPt = null; continue; }
+      
+      const x = padLeft + ((p.t - tStart) / windowSec) * plotW;
+      const y = plotH - ((p.midi + p.cents / 100 - loMidi) / midiSpan) * plotH;
+      
+      if (prevPt) {
+        // Upcoming notes (ahead of playhead) are brighter
+        const isAhead = p.t > playbackTime;
+        
+        // Soft glow
+        ctx.strokeStyle = isAhead ? 'rgba(78, 205, 196, 0.15)' : 'rgba(78, 205, 196, 0.08)';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(prevPt.x, prevPt.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        
+        // Core line
+        ctx.strokeStyle = isAhead ? 'rgba(78, 205, 196, 0.6)' : 'rgba(78, 205, 196, 0.25)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(prevPt.x, prevPt.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+      
+      prevPt = { x, y };
+    }
+  }
+
+  // ---- Draw live pitch ----
+  if (livePitchHistory.length >= 2) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    let prevPt = null;
+    
+    for (let i = 0; i < livePitchHistory.length; i++) {
+      const p = livePitchHistory[i];
+      if (p.t < tStart - 0.1 || p.t > tEnd + 0.1) { prevPt = null; continue; }
+      if (p.freq <= 0 || p.midi <= 0) { prevPt = null; continue; }
+      
+      const x = padLeft + ((p.t - tStart) / windowSec) * plotW;
+      const frac = p.cents / 100;
+      const y = plotH - ((p.midi + frac - loMidi) / midiSpan) * plotH;
+      
+      if (prevPt) {
+        const absCents = Math.abs(p.cents);
+        let color;
+        if (absCents <= 8) color = '#2ecc71';
+        else if (absCents <= 20) color = '#f1c40f';
+        else color = '#e74c3c';
+        
+        // Compare to reference for coloring
+        if (refData) {
+          const refNote = getRefNoteAt(p.t);
+          if (refNote && refNote.midi > 0) {
+            const semiDiff = Math.abs(p.midi - refNote.midi);
+            if (semiDiff === 0) {
+              const centDiff = Math.abs(p.cents - refNote.cents);
+              if (centDiff <= 10) color = '#2ecc71';
+              else if (centDiff <= 25) color = '#f1c40f';
+              else color = '#e74c3c';
+            } else {
+              color = '#e74c3c';
+            }
+          }
+        }
+        
+        // Glow
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.globalAlpha = 0.25;
+        ctx.beginPath();
+        ctx.moveTo(prevPt.x, prevPt.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        
+        // Core
+        ctx.lineWidth = 3;
+        ctx.globalAlpha = 0.95;
+        ctx.beginPath();
+        ctx.moveTo(prevPt.x, prevPt.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      
+      prevPt = { x, y };
+    }
+  }
+}
+
+// ============================================================
+//  Resize
+// ============================================================
+window.addEventListener('resize', () => {
+  const t = decodedBuffer ? getBufferPlaybackTime() : 0;
+  drawTimeline(t);
+});
+
+// ============================================================
+//  S3 Track Loader (browser UI removed — tracks arrive via ?s3= param)
+// ============================================================
+const tenantOrigin = window.location.origin;
+
+async function loadS3Track(filePath) {
+  // (S3 browser UI removed — loading directly from ?s3= param)
+
+  const params = new URLSearchParams(window.location.search);
+  const exp = params.get('exp') || '';
+  const sig = params.get('sig') || '';
+  const isSharedLibrary = String(filePath || '').replace(/^\/+/, '').startsWith('recordings/library/');
+  let streamJsonUrl = tenantOrigin + '/wav/stream?format=json&file=' + encodeURIComponent(filePath);
+  if (isSharedLibrary) {
+    if (!exp || !sig) {
+      throw new Error('Shared library tracks must be opened from the Practice button.');
+    }
+    streamJsonUrl = tenantOrigin + '/wav/practice-stream?format=json&file=' + encodeURIComponent(filePath) + '&exp=' + encodeURIComponent(exp) + '&sig=' + encodeURIComponent(sig);
+  }
+  const fileName = filePath.split('/').pop();
+
+  trackInfoEl.innerHTML = `<span class="title">${escHtml(fileName)}</span> · Loading audio...`;
+
+  try {
+    // Get presigned S3 URL via JSON to avoid CORS redirect issues
+    const urlResp = await fetch(streamJsonUrl);
+    if (!urlResp.ok) throw new Error('HTTP ' + urlResp.status);
+    const urlData = await urlResp.json();
+    if (!urlData.ok || !urlData.url) throw new Error(urlData.error || 'No presigned URL');
+    const presignedUrl = urlData.url;
+
+    // Fetch the audio data for pitch extraction + playback from presigned URL
+    trackInfoEl.innerHTML = `<span class="title">${escHtml(fileName)}</span> · Downloading for analysis...`;
+    const resp = await fetch(presignedUrl);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const arrBuf = await resp.arrayBuffer();
+
+    trackInfoEl.innerHTML = `<span class="title">${escHtml(fileName)}</span> · Analyzing pitch...`;
+
+    const tmpCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+    const decoded = await tmpCtx.decodeAudioData(arrBuf);
+    decodedBuffer = decoded;
+      const chIdx = (activeChannel === 'right' && decoded.numberOfChannels > 1) ? 1 : 0;
+    const mono = decoded.getChannelData(chIdx);
+    tmpCtx.close();
+
+    const pitchData = await extractPitchAsync(mono, 44100);
+
+    const data = {
+      title: fileName.replace(/\.[^.]+$/, ''),
+      duration: decoded.duration,
+      sampleRate: 44100,
+      pitchData
+    };
+
+    loadRefData(data, fileName);
+    trackInfoEl.innerHTML = `<span class="title">${escHtml(fileName)}</span> · ${fmtTime(decoded.duration)} · ${pitchData.filter(p => p.freq > 0).length} notes · Ready!`;
+
+  } catch (e) {
+    trackInfoEl.innerHTML = `<span style="color:#e74c3c">Error loading: ${escHtml(String(e))}</span>`;
+    console.error('S3 track load error:', e);
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+// ============================================================
+//  Init
+// ============================================================
+tryPreload();
+</script>
+</body>
+</html>

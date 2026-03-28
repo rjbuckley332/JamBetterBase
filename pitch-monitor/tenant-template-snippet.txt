@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+    <title>{{ tenant_label|default("JamBetter") }} Jamulus Control</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: url(/static/jambetter_bg.jpg) center 80%/cover no-repeat fixed;
+            font-family: Arial, sans-serif;
+        }
+        .appHeader { margin: -4px -4px 14px -4px; }
+        .appLogo { width: 100%; max-height: 220px; object-fit: contain;border-radius: 10px; display:block; }
+
+        .header-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin: 6px 0 10px 0;
+        }
+
+        .support-widget {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            width: 340px;
+            max-width: calc(100vw - 24px);
+            max-height: 72vh;
+            background: rgba(20,20,20,0.95);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            z-index: 120;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            display: none;
+            flex-direction: column;
+        }
+        .support-widget.open { display: flex; }
+        .support-head { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.18); display:flex; justify-content:space-between; align-items:center; }
+        .support-body { padding: 10px 12px; overflow:auto; color: #f5f7ff; }
+        .support-actions { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+        .support-log { font-size: 13px; line-height: 1.35; max-height: 220px; overflow:auto; background: rgba(0,0,0,0.45); border-radius:6px; padding:8px; color:#f5f7ff; }
+        .support-input { display:flex; gap:6px; margin-top:8px; }
+        .support-input input { flex:1; }
+
+        .toast-stack {
+            position: fixed;
+            right: 14px;
+            top: 14px;
+            z-index: 140;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: min(92vw, 420px);
+        }
+        .toast-item {
+            background: rgba(22, 110, 56, 0.95);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 10px;
+            padding: 10px 12px;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+            font-size: 14px;
+            line-height: 1.35;
+        }
+        .toast-item a { color: #fff; text-decoration: underline; }
+
+        .support-log div { color:#f5f7ff; }
+        .support-log span { color:#b9c2d0; }
+        
+        .container {
+            position: relative;
+            z-index: 50;
+            background: rgba(0,0,0,0.22);
+            color: #fff;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            max-width: 900px;
+            width: calc(100% - 40px);
+            margin: 260px auto 20px auto;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.18); 
+            border: 1px solid rgba(255,255,255,0.18);
+        }
+        
+        .btn { margin: 2px; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-success { background-color: #5cb85c; color: white; }
+        .btn-danger { background-color: #d9534f; color: white; }
+        .btn-warning { background-color: #f0ad4e; color: white; }
+        .btn-info { background-color: #5bc0de; color: white; }
+        .btn-sm { font-size: 0.85em; padding: 6px 12px; }
+        
+        h2 { margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 10px; }
+        h3 { margin: 15px 0 10px 0; font-size: 16px; }
+        
+        .section {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+        }
+        
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 5px 0;
+        }
+        
+        input[type="range"] {
+            flex: 1;
+            max-width: 200px;
+        }
+        
+        .status-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        
+        .status-item {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .metro-controls { display: flex; flex-direction: column; gap: 10px; }
+        .metro-row { display: flex; align-items: center; gap: 10px; }
+        .metro-row label { min-width: 110px; font-weight: 600; }
+        .metro-row input[type="range"] { flex: 1; max-width: none; }
+        .metro-time-row select { min-width: 130px; }
+        .metro-actions { display: flex; justify-content: flex-start; }
+        
+        .file-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+            padding: 6px 10px;
+            background: rgba(0,0,0,0.15);
+            border-radius: 4px;
+        }
+        
+        .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .file-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+        .icon-btn { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items:center; justify-content:center; font-size: 17px; line-height: 1; }
+        
+        .browser-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .upload-section { display: flex; align-items: center; gap: 8px; }
+        
+        #wavFiles { 
+            max-height: 300px; 
+            overflow-y: auto; 
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            padding: 8px;
+            background: rgba(0,0,0,0.1);
+            min-height: 50px;
+        }
+        #wavFiles:empty::before {
+            content: "Loading files...";
+            color: rgba(255,255,255,0.5);
+            font-style: italic;
+        }
+        
+        /* Flashing red for loading state */
+        @keyframes flash-red {
+            0%, 100% { background-color: #d9534f; }
+            50% { background-color: #ff6b6b; }
+        }
+        .btn-loading {
+            animation: flash-red 1s infinite;
+            color: white !important;
+        }
+        
+        .nav-left { display: flex; gap: 5px; }
+        
+        .help-tooltip {
+            cursor: help;
+            font-size: 16px;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .help-tooltip:hover {
+            opacity: 1;
+        }
+        
+        /* Desktop: icon-only practice track buttons */
+        @media (min-width: 601px) {
+            .input-group .btn .btn-label {
+                display: none;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .btn-icon { display: none; }
+        }
+
+        @media (max-width: 600px) {
+            body {
+                /* "fixed" backgrounds can be janky on mobile */
+                background-attachment: scroll;
+            }
+
+            .container {
+                margin: 120px auto 12px auto;
+                width: calc(100% - 24px);
+                padding: 14px;
+            }
+
+            .appLogo {
+                max-height: 140px;
+            }
+
+            .input-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .slider-group {
+                flex-wrap: wrap;
+                align-items: center;
+            }
+
+            input[type="text"],
+            input[type="number"] {
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            input[type="range"] {
+                max-width: none;
+                width: 100%;
+            }
+
+            .btn {
+                font-size: 16px;
+                padding: 12px 16px;
+            }
+
+
+
+            .status-row {
+                gap: 8px;
+            }
+        }
+    
+        @media (max-width: 768px) {
+            .file-actions { width: 100%; justify-content: flex-start; }
+            .file-actions .btn { font-size: 14px; padding: 8px 10px; }
+            .icon-btn { width: 38px; height: 38px; font-size: 19px; }
+            .metro-row { flex-direction: column; align-items: stretch; gap: 6px; }
+            .metro-row label { min-width: 0; }
+            #metroSig { width: 100%; font-size: 18px; padding: 10px; }
+            #metroToneFreq { width: 100%; height: 34px; }
+            #metroBpm, #metroVol { width: 100%; height: 34px; }
+            #metroToggleBtn { width: 100%; font-size: 20px; padding: 12px 14px; text-align: left; }
+        }
+
+</style>
+</head>
+<body>
+    <div style="padding:8px 12px; margin:10px 12px; border-radius:10px; background:rgba(0,0,0,0.55); color:#fff; font-weight:700; letter-spacing:.04em; text-transform:uppercase;">Tenant: {{ tenant_label }}</div>
+    <div class="container">
+        <div class="appHeader">
+            <img class="appLogo" src="/static/jambetter.jpg" alt="JamBetter">
+        </div>
+
+        <div class="header-actions">
+
+            <button type="button" id="supportBtn" class="btn btn-info" onclick="toggleSupportPanel(); return false;">💬 Support</button>
+        </div>
+
+        <!-- SESSION & RECORDING -->
+        <div class="section">
+            <h2>🎙️ Session & Recording</h2>
+            <div class="input-group">
+                <label><b>Session Name:</b></label>
+                <input type="text" id="sessionNameInput" placeholder="Enter name before recording" style="flex:1;min-width:200px;">
+                <label style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="includeInjector"> Include selected practice track
+                    <span class="help-tooltip" title="When enabled, the practice track audio is included in your recorded session files.">❓</span>
+                </label>
+                <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
+                <span class="help-tooltip" title="If a practice track is selected, it will automatically play when you start recording">❓</span>
+                <button class="btn btn-warning" onclick="restartBotJamulus()">Restart Jukebox</button>
+            </div>
+            <div class="status-row">
+                <span id="recStatus" class="status-item" style="background:#777;">Recording: OFF</span>
+                <span id="jamStatus" class="status-item" style="background:#777;">Jamulus Server: Unknown</span>
+            </div>
+        </div>
+
+        <!-- METRONOME -->
+        <div class="section">
+            <h3>🥁 Metronome (everyone hears it)</h3>
+            <div class="metro-controls">
+                <div class="metro-row">
+                    <label>BPM: <span id="bpmVal">100</span></label>
+                    <input type="range" id="metroBpm" min="40" max="200" value="100" oninput="document.getElementById('bpmVal').textContent=this.value; scheduleMetronomeUpdate();">
+                </div>
+                <div class="metro-row">
+                    <label>Vol: <span id="volVal">80</span>%</label>
+                    <input type="range" id="metroVol" min="0" max="120" value="80" oninput="document.getElementById('volVal').textContent=this.value; scheduleMetronomeUpdate();">
+                </div>
+                <div class="metro-row metro-time-row">
+                    <label>Time: <span id="sigVal">4/4</span></label>
+                    <select id="metroSig" onchange="document.getElementById('sigVal').textContent=this.value; scheduleMetronomeUpdate();">
+                        <option value="2/4">2/4</option>
+                        <option value="3/4">3/4</option>
+                        <option value="4/4" selected>4/4</option>
+                        <option value="6/8">6/8</option>
+                        <option value="12/8">12/8</option>
+                    </select>
+                </div>
+                <div class="metro-row">
+                    <label>Tone:</label>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:14px;">
+                        <label><input type="radio" name="metroTone" value="soft" checked onchange="setTonePreset('soft')"> Soft</label>
+                        <label><input type="radio" name="metroTone" value="bright" onchange="setTonePreset('bright')"> Bright</label>
+                        <label><input type="radio" name="metroTone" value="wood" onchange="setTonePreset('wood')"> Wood</label>
+                        <label><input type="radio" name="metroTone" value="cowbell" onchange="setTonePreset('cowbell')"> Cowbell</label>
+                    </div>
+                </div>
+                <div class="metro-row">
+                    <label>Tone Freq: <span id="toneFreqVal">700</span> Hz</label>
+                    <input type="range" id="metroToneFreq" min="400" max="2000" value="700" oninput="document.getElementById('toneFreqVal').textContent=this.value; scheduleMetronomeUpdate();">
+                </div>
+                <div class="metro-actions">
+                    <button id="metroToggleBtn" class="btn btn-success" onclick="toggleMetronome()">Start</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PRACTICE TRACK -->
+        <div class="section">
+            <h3>🎵 Practice Track</h3>
+            <div class="input-group">
+                <label><b>Selected:</b></label>
+                <code id="queuedWavDisplay" style="flex:1;">(none)</code>
+                <button id="playToggleBtn" class="btn btn-success" onclick="togglePlayback()" title="Play Track"><span class="btn-icon">▶️ </span><span class="btn-label">Play</span></button>
+                <button class="btn btn-info" onclick="restartTrack()" title="Restart Track"><span class="btn-icon">🔄 </span><span class="btn-label">Restart</span></button>
+                <button class="btn btn-warning" onclick="clearQueuedWav()" title="Clear Track"><span class="btn-icon">✖️ </span><span class="btn-label">Clear</span></button>
+                <button class="btn btn-success" onclick="openPracticeWithTrack()" title="Practice with pitch monitor"><span class="btn-icon">🎤 </span><span class="btn-label">Practice</span></button>
+                <button class="btn btn-info" onclick="openTunerWithTrack()" title="Open Tuner"><span class="btn-icon">🎵 </span><span class="btn-label">Tuner</span></button>
+            </div>
+        </div>
+
+        <!-- BROWSE RECORDINGS -->
+        <div class="section">
+            <h3>📂 Browse Recordings</h3>
+            <div id="wavBrowser">
+                <div class="browser-header">
+                    <div><b>Browse:</b> <code id="wavPath">recordings/</code></div>
+                    <div class="nav-left">
+                        <button class="btn btn-sm" onclick="wavUp()">Up</button>
+                        <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
+                        <button id="deleteModeBtn" class="btn btn-sm btn-danger" onclick="toggleDeleteMode()" title="Arms quad-click delete on rows">Delete Mode: OFF</button>
+                        <button class="btn btn-sm btn-info" onclick="downloadCurrentFolder()">Download Folder ZIP</button>
+                    </div>
+                    <div class="upload-section" style="flex-direction:column;align-items:flex-end;">
+                        <div id="uploadFileName" style="font-size:12px;color:rgba(255,255,255,0.8);margin-bottom:4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <label class="btn btn-sm" style="position:relative;overflow:hidden;cursor:pointer;margin:0;">
+                                Choose File
+                                <input type="file" id="tmpTrackUploadInput" accept="audio/*" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
+                            </label>
+                            <span class="help-tooltip" title="Upload your own practice track here. It will appear in the temp folder below.">❓</span>
+                            <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="wavFiles"></div>
+            </div>
+        </div>
+
+    </div>
+
+
+    <div id="supportWidget" class="support-widget" aria-live="polite">
+        <div class="support-head">
+            <b>JamBetter Support</b>
+            <button type="button" class="btn btn-sm" onclick="toggleSupportPanel(false); return false;">Close</button>
+        </div>
+        <div class="support-body">
+            <div style="font-size:12px;opacity:0.85;margin-bottom:8px;">Server: <code id="supportServerBadge"></code></div>
+            <div class="support-actions">
+                <button type="button" class="btn btn-sm btn-info" onclick="supportQuick('status'); return false;">Check Status</button>
+                <button type="button" class="btn btn-sm btn-warning" onclick="supportQuick('restart'); return false;">Request Restart</button>
+                <button type="button" class="btn btn-sm" onclick="supportQuick('troubleshoot'); return false;">Troubleshoot</button>
+                <button type="button" class="btn btn-sm btn-danger" onclick="supportQuick('escalate'); return false;">Escalate</button>
+            </div>
+                        <div class="support-metrics" style="margin:8px 0 10px 0; padding:8px; border:1px solid rgba(255,255,255,.15); border-radius:8px;">
+                <div style="font-size:12px;opacity:.9;margin-bottom:6px;"><b>Client Quality Check</b> (enter Jamulus metrics)</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <input id="cqPing" type="number" placeholder="Ping ms" style="width:88px;" />
+                    <input id="cqDelay" type="number" placeholder="Delay ms" style="width:88px;" />
+                    <select id="cqJitterState" style="min-width:170px;">
+                        <option value="green">🟢 Mostly green</option>
+                        <option value="mixed">🟡 Mixed (occasional red)</option>
+                        <option value="red">🔴 Frequent red</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-info" onclick="analyzeClientQuality(); return false;">Analyze</button>
+                </div>
+            </div>
+
+            <div id="supportLog" class="support-log"></div>
+            <div class="support-input">
+                <input id="supportText" type="text" placeholder="Describe your issue..." style="color:#111;" />
+                <button type="button" class="btn btn-sm btn-success" onclick="supportSendText(); return false;">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
+    <script>
+
+        // JB_JS_ERROR_BANNER: surface JS errors in-page (helps when Edge says 'Loading…')
+        (function(){
+            function showFatal(msg){
+                try {
+                    var el = document.getElementById('wavFiles');
+                    if (!el) return;
+                    el.innerHTML = '<div style="padding:12px;border:2px solid #d9534f;color:#d9534f;border-radius:8px">' +
+                        '<div style="font-weight:700">⚠️ Page script error</div>' +
+                        '<div style="margin-top:6px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">' +
+                        String(msg) + '</div>' +
+                        '<div style="margin-top:8px;color:#555;font-family:system-ui;font-size:12px">Try hard refresh. If it persists, screenshot this box.</div>' +
+                    '</div>';
+                } catch(_) {}
+            }
+            window.addEventListener('error', function(ev){
+                showFatal((ev && (ev.message || ev.error)) ? (ev.message || String(ev.error)) : 'unknown error');
+            });
+            window.addEventListener('unhandledrejection', function(ev){
+                showFatal('unhandled promise rejection: ' + (ev && ev.reason ? String(ev.reason) : 'unknown'));
+            });
+        })();
+
+        // State
+
+        const SUPPORT_BOT_URL = {{ (support_bot_url or '')|tojson }};
+        const SUPPORT_SERVER_ID = {{ (support_server_id or '')|tojson }};
+        let supportToken = null;
+
+        function supportLog(line) {
+            const el = document.getElementById('supportLog');
+            if (!el) return;
+            const ts = new Date().toLocaleTimeString();
+            el.innerHTML += `<div><span style="opacity:.7">[${ts}]</span> ${line}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+
+        function analyzeClientQuality() {
+            const ping = parseFloat(document.getElementById('cqPing')?.value || '0');
+            const delay = parseFloat(document.getElementById('cqDelay')?.value || '0');
+            const jitterState = (document.getElementById('cqJitterState')?.value || 'green');
+
+            let score = 100;
+            if (ping > 60) score -= 15;
+            if (ping > 90) score -= 20;
+            if (delay > 45) score -= 15;
+            if (delay > 70) score -= 20;
+
+            if (jitterState === 'mixed') score -= 18;
+            if (jitterState === 'red') score -= 35;
+
+            let verdict = 'Good';
+            let badge = '🟢';
+            let action = 'Connection looks healthy.';
+            if (score < 75) {
+                verdict = 'Fair';
+                badge = '🟡';
+                action = 'Try increasing buffer slightly and prefer wired network.';
+            }
+            if (score < 50) {
+                verdict = 'Poor';
+                badge = '🔴';
+                action = 'Network instability likely. Use wired ethernet, close background traffic, retry.';
+            }
+            const jitterLabel = jitterState === 'green' ? 'mostly green' : (jitterState === 'mixed' ? 'mixed/occasional red' : 'frequent red');
+            supportLog(`${badge} Client quality: ${verdict} (score ${Math.max(0,score)}/100) · ping ${ping||0}ms · delay ${delay||0}ms · jitter ${jitterLabel}`);
+            supportLog(`ℹ️ Recommendation: ${action}`);
+        }
+
+        async function ensureSupportSession() {
+            if (supportToken) return supportToken;
+            const room = (document.getElementById('sessionNameInput')?.value || '').trim();
+            const res = await fetch('/api/support/session', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ customer_id: 'web-customer', server_id: SUPPORT_SERVER_ID, room_name: room })
+            });
+            const data = await res.json();
+            if (data.ok) supportToken = data.token;
+            return supportToken;
+        }
+
+        async function supportQuick(intent) {
+            try {
+                await ensureSupportSession();
+                const res = await fetch('/api/support/message', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ token: supportToken, intent })
+                });
+                const data = await res.json();
+                if (!res.ok && data && data.error === 'invalid session token') {
+                    supportToken = null;
+                    await ensureSupportSession();
+                    return supportQuick(intent);
+                }
+                supportLog((data && (data.message || data.error)) || 'No response');
+                if (intent === 'status' && data && data.data && data.data.quality) {
+                    const q = data.data.quality;
+                    const badge = q.grade === 'green' ? '🟢' : (q.grade === 'yellow' ? '🟡' : '🔴');
+                    supportLog(`${badge} Quality: ${q.label} · load ${q.load1}/${q.cores} cores`);
+                }
+            } catch (e) {
+                supportLog('Support error: ' + e);
+            }
+        }
+
+        async function supportSendText() {
+            const input = document.getElementById('supportText');
+            const text = (input?.value || '').trim();
+            if (!text) return;
+            supportLog('You: ' + text);
+            input.value = '';
+            try {
+                await ensureSupportSession();
+                const res = await fetch('/api/support/message', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ token: supportToken, text })
+                });
+                const data = await res.json();
+                if (!res.ok && data && data.error === 'invalid session token') {
+                    supportToken = null;
+                    await ensureSupportSession();
+                    return supportQuick(intent);
+                }
+                supportLog((data && (data.message || data.error)) || 'No response');
+            } catch (e) {
+                supportLog('Support error: ' + e);
+            }
+        }
+
+        function toggleSupportPanel(forceOpen) {
+            const panel = document.getElementById('supportWidget');
+            const wantOpen = (typeof forceOpen === 'boolean') ? forceOpen : !panel.classList.contains('open');
+            panel.classList.toggle('open', wantOpen);
+            document.getElementById('supportServerBadge').textContent = SUPPORT_SERVER_ID || 'unknown';
+            if (wantOpen && !document.getElementById('supportLog').innerHTML) {
+                supportLog('Support is ready. Choose an action or describe your issue.');
+            }
+        }
+
+        let recordingState = "OFF";
+        let metronomeRunning = false;
+        let playbackRunning = false;
+        const TENANT_SLUG = "{{ tenant_label }}";
+        const TENANT_WAV_ROOT = `recordings/${TENANT_SLUG}/`;
+        let wavCurrentPath = TENANT_WAV_ROOT;
+
+        // Delete Mode (OFF by default). When OFF, quad-click delete is disabled.
+        // Use var (not let) to avoid iOS temporal-dead-zone ReferenceError if accessed before initialization.
+        var JB_DELETE_MODE = false;
+        function toggleDeleteMode(){
+            JB_DELETE_MODE = !JB_DELETE_MODE;
+            const b = document.getElementById('deleteModeBtn');
+            if (b){
+                b.textContent = 'Delete Mode: ' + (JB_DELETE_MODE ? 'ON' : 'OFF');
+                b.classList.toggle('btn-danger', !JB_DELETE_MODE);
+                b.classList.toggle('btn-warning', JB_DELETE_MODE);
+            }
+            try { showToast(JB_DELETE_MODE ? 'Delete Mode ON' : 'Delete Mode OFF'); } catch(_) {}
+        }
+
+
+        // Quad-click delete gesture (4 clicks/taps within 1200ms on the same row)
+        const __quadClickState = { key: null, count: 0, t0: 0 };
+
+        function __quadClickHit(key) {
+            // Returns {hit:true} on 4th tap; otherwise {hit:false,count:n}
+            const now = Date.now();
+            if (__quadClickState.key !== key || (now - __quadClickState.t0) > 1200) {
+                __quadClickState.key = key;
+                __quadClickState.count = 1;
+                __quadClickState.t0 = now;
+                return {hit:false, count:1};
+            }
+            __quadClickState.count += 1;
+            const c = __quadClickState.count;
+            if (c >= 4) {
+                __quadClickState.count = 0;
+                __quadClickState.t0 = 0;
+                return {hit:true, count:4};
+            }
+            return {hit:false, count:c};
+        }
+
+        const seenDirsByPath = {};
+
+        function showToast(html, ms=7000) {
+            const stack = document.getElementById('toastStack');
+            if (!stack) return;
+            const el = document.createElement('div');
+            el.className = 'toast-item';
+            el.innerHTML = html;
+            stack.appendChild(el);
+            setTimeout(() => { try { el.remove(); } catch(e) {} }, ms);
+        }
+
+
+        // Delete modal helpers (quad-tap → modal → POST /wav/delete)
+        function jbHideDeleteModal(){
+            const m = document.getElementById('jbDeleteModal');
+            if (m) m.style.display = 'none';
+            const b = document.getElementById('jbDeleteConfirmBtn');
+            if (b) b.onclick = null;
+        }
+
+        function jbShowDeleteModal(kind, label, targetPath){
+            const m = document.getElementById('jbDeleteModal');
+            const body = document.getElementById('jbDeleteModalBody');
+            const btn = document.getElementById('jbDeleteConfirmBtn');
+            if (!m || !body || !btn) { showToast('<span class="toast-danger">Delete modal missing</span>'); return; }
+
+            const safeLabel = String(label||'');
+            const safePath = String(targetPath||'');
+            body.innerHTML = `Delete <b>${safeLabel}</b>?<br><br>This moves it to <code>trash/</code> (expires on the 15‑day retention cycle).`;
+            m.style.display = 'flex';
+
+            btn.onclick = async () => {
+                try {
+                    btn.disabled = true;
+                    btn.textContent = 'Deleting…';
+                    const res = await apiFetch('/wav/delete', {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ path: safePath, kind })
+                    });
+                    const txt = await res.text();
+                    if (!res.ok) { showToast(`<span class="toast-danger">Delete failed:</span> ${txt}`); return; }
+                    showToast(`🗑️ Moved to trash: ${safeLabel}`);
+                    jbHideDeleteModal();
+                    wavRefresh();
+                } catch (e) {
+                    showToast(`<span class="toast-danger">Delete error:</span> ${e}`);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'Delete';
+                }
+            };
+        }
+
+        // iOS Shortcuts helper (for MP3 share handoff)
+        const JB_SHORTCUT_NAME = 'JamBetter Share MP3';
+        function shortcutsRunUrl(shortcutName, fileUrl){
+            const name = shortcutName || JB_SHORTCUT_NAME;
+            try {
+                return `shortcuts://run-shortcut?name=${encodeURIComponent(name)}&input=${encodeURIComponent(fileUrl||'')}`;
+            } catch(e) {
+                return 'shortcuts://';
+            }
+        }
+
+
+        
+        // Simple API fetch
+        async function apiFetch(url, opts) {
+            // Use a timeout so the UI can fail fast instead of hanging on "Loading…"
+            return fetchWithTimeout(url, opts || {}, 8000);
+        }
+        
+        function setBusy(btn, busy, label) {
+            if (!btn) return;
+            if (busy) {
+                btn.dataset._oldText = btn.textContent;
+                btn.classList.add('busy');
+                if (label) btn.textContent = label;
+            } else {
+                btn.classList.remove('busy');
+                if (btn.dataset._oldText) btn.textContent = btn.dataset._oldText;
+            }
+        }
+
+        function fetchWithTimeout(url, opts, timeoutMs) {
+            const ms = timeoutMs || 8000;
+            // NOTE: Avoid AbortController here. On some iOS browsers it can fail to abort and leaves UI stuck on "Loading…".
+            return Promise.race([
+                fetch(url, opts || {}),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+            ]);
+        }
+
+
+        // Recording
+        async function toggleRecording() {
+            const btn = document.getElementById("recordToggleBtn");
+            const nameInput = document.getElementById("sessionNameInput");
+            const name = nameInput.value.trim();
+            const isStarting = btn.textContent.trim().toLowerCase().includes("start");
+            
+            if (isStarting && !name) {
+                alert('Please enter a session name before recording.');
+                nameInput.focus();
+                nameInput.style.border = '2px solid #f0ad4e';
+                setTimeout(() => nameInput.style.border = '', 2000);
+                return;
+            }
+            
+            try {
+                const res = await apiFetch("/toggle-recording", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_name: name, action: isStarting ? "start" : "stop", include_injector: document.getElementById('includeInjector')?.checked || false })
+                });
+
+                if (!res.ok) {
+                    alert(await res.text() || "Failed to toggle recording");
+                } else {
+                    if (isStarting) {
+                        try { await apiFetch('/wav/play-queued', { method: 'POST' }); } catch (e) {}
+                    } else {
+                        try { await apiFetch('/wav/stop', { method: 'POST' }); } catch (e) {}
+                    }
+                    updateRecordingButton(isStarting ? "ON" : "OFF");
+                }
+            } catch (err) {
+                alert("Request error.");
+            }
+        }
+
+        function updateRecordingButton(state) {
+            recordingState = state;
+            const btn = document.getElementById("recordToggleBtn");
+            const status = document.getElementById("recStatus");
+            if (state === "ON") {
+                btn.textContent = "Stop Recording";
+                btn.className = "btn btn-danger";
+                status.textContent = "Recording: ON";
+                status.style.background = "#d9534f";
+            } else {
+                btn.textContent = "Start Recording";
+                btn.className = "btn btn-success";
+                status.textContent = "Recording: OFF";
+                status.style.background = "#777";
+            }
+        }
+
+        // Metronome
+        const TONE_PRESET_FREQ = { soft: 700, bright: 1300, wood: 900, cowbell: 1700 };
+
+        function setTonePreset(tone) {
+            const f = TONE_PRESET_FREQ[tone] || 700;
+            const slider = document.getElementById('metroToneFreq');
+            if (slider) slider.value = String(f);
+            document.getElementById('toneFreqVal').textContent = String(f);
+            scheduleMetronomeUpdate();
+        }
+
+        function getSelectedTone() {
+            const r = document.querySelector('input[name="metroTone"]:checked');
+            return r ? r.value : 'soft';
+        }
+
+        function getMetronomeParams() {
+            return {
+                bpm: parseInt(document.getElementById('metroBpm').value || '100', 10),
+                vol: parseInt(document.getElementById('metroVol').value || '80', 10) / 100.0,
+                sig: (document.getElementById('metroSig').value || '4/4'),
+                tone: getSelectedTone(),
+                freq: parseInt(document.getElementById('metroToneFreq').value || '700', 10)
+            };
+        }
+
+        let metroUpdateTimer = null;
+        async function scheduleMetronomeUpdate() {
+            if (!metronomeRunning) return;
+            if (metroUpdateTimer) clearTimeout(metroUpdateTimer);
+            metroUpdateTimer = setTimeout(async () => {
+                const { bpm, vol, sig, tone, freq } = getMetronomeParams();
+                try {
+                    const r = await apiFetch('/metronome/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bpm, vol, sig, tone, freq })
+                    });
+                    if (!r.ok) { console.warn('metronome update failed'); }
+                } catch (e) {}
+            }, 200);
+        }
+
+        async function toggleMetronome() {
+            const btn = document.getElementById('metroToggleBtn');
+            const isStarting = !metronomeRunning;
+            setBusy(btn, true, isStarting ? 'Starting...' : 'Stopping...');
+            try {
+                let res;
+                if (isStarting) {
+                    const { bpm, vol, sig, tone, freq } = getMetronomeParams();
+                    res = await apiFetch('/metronome/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bpm, vol, sig, tone, freq })
+                    });
+                } else {
+                    res = await apiFetch('/metronome/stop', { method: 'POST' });
+                }
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || data.ok === false) {
+                    console.warn('metronome toggle failed', data);
+                    alert('Metronome request failed: ' + (data.error || data.upstream?.error || res.statusText || 'unknown'));
+                }
+            } finally {
+                setBusy(btn, false);
+                // authoritative UI from backend status
+                try { await refreshStatuses(); } catch (e) {}
+            }
+        }
+
+        // Playback
+        async function togglePlayback() {
+            const btn = document.getElementById('playToggleBtn');
+            if (!btn) return;
+            
+            if (playbackRunning) {
+                setBusy(btn, true, 'Stopping...');
+                try {
+                    await apiFetch('/wav/stop', { method: 'POST' });
+                } finally {
+                    setBusy(btn, false);
+                }
+            } else {
+                btn.classList.add('btn-loading');
+                btn.textContent = 'Loading...';
+                btn.disabled = true;
+                try {
+                    await apiFetch('/wav/play-queued', { method: 'POST' });
+                    let attempts = 0;
+                    const check = setInterval(async () => {
+                        await refreshPlaybackStatus();
+                        if (playbackRunning || ++attempts > 30) {
+                            clearInterval(check);
+                            btn.classList.remove('btn-loading');
+                            btn.disabled = false;
+                            updatePlaybackButton();
+                        }
+                    }, 1000);
+                } catch (e) {
+                    btn.classList.remove('btn-loading');
+                    btn.disabled = false;
+                    updatePlaybackButton();
+                }
+            }
+        }
+
+        async function refreshPlaybackStatus() {
+            try {
+                const res = await apiFetch('/wav/status');
+                const data = await res.json();
+                playbackRunning = data.running || false;
+            } catch (e) {}
+        }
+
+        function updatePlaybackButton() {
+            const btn = document.getElementById('playToggleBtn');
+            if (!btn) return;
+            if (playbackRunning) {
+                btn.innerHTML = '<span class="btn-icon">⏹️ </span><span class="btn-label">Stop</span>'; btn.title = 'Stop Track';
+                btn.className = 'btn btn-danger';
+            } else {
+                btn.innerHTML = '<span class="btn-icon">▶️ </span><span class="btn-label">Play</span>'; btn.title = 'Play Track';
+                btn.className = 'btn btn-success';
+            }
+        }
+
+        async function restartTrack() {
+            try {
+                const res = await apiFetch('/wav/restart', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    alert('Restart failed: ' + (data.error || (data.upstream && data.upstream.error) || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Restart error: ' + e);
+            }
+        }
+
+        async function clearQueuedWav() {
+            await apiFetch('/wav/queue', { method: 'DELETE' });
+            refreshQueuedWav();
+        }
+
+        async function refreshQueuedWav() {
+            try {
+                const res = await apiFetch('/wav/queue');
+                const data = await res.json();
+                const f = (data && data.file) ? data.file : '';
+                document.getElementById('queuedWavDisplay').textContent = f || '(none)';
+            } catch (e) {}
+        }
+
+        // File Browser
+        function isAudioFile(name) {
+            return /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(name);
+        }
+
+        function getFileIcon(name) {
+            if (/\.(mp3|ogg|flac|m4a|aac)$/i.test(name)) return '🎵';
+            if (/\.wav$/i.test(name)) return '🔊';
+            return '📄';
+        }
+
+        function prettyUploadName(name) {
+            // Temp uploads are stored as: <uuid>_<original>
+            // Hide the uuid prefix for readability.
+            if (!name) return name;
+            return name.replace(/^[0-9a-f]{32}_/i, '');
+        }
+
+
+        function downloadCurrentFolder() {
+            const p = wavCurrentPath || 'recordings/';
+            if (!p.startsWith(TENANT_WAV_ROOT)) { wavCurrentPath = TENANT_WAV_ROOT; }
+            if (p === 'recordings/' || p === 'tracks/') {
+                if (!confirm('Download the entire ' + p.replace('/', '') + ' library as one ZIP? This can be large.')) return;
+            }
+            window.location.href = '/wav/download-folder?path=' + encodeURIComponent('/' + p);
+        }
+
+        async function wavRefresh() {
+            try {
+                const res = await apiFetch('/wav/browse?path=' + encodeURIComponent('/' + wavCurrentPath));
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    const msg = (data && (data.error || data.message)) ? (data.error || data.message) : ('HTTP ' + res.status);
+                    try { showToast('⚠️ Browse failed: ' + msg); } catch(e) {}
+                    console.warn('wavBrowse failed', res.status, data);
+                    return;
+                }
+                const filesDiv = document.getElementById('wavFiles');
+                filesDiv.innerHTML = '';
+
+                // New-folder notification (in-page)
+                const pathKey = wavCurrentPath;
+                const dirsNow = (data.dirs || []).slice();
+                const prev = seenDirsByPath[pathKey];
+                if (prev) {
+                    const prevSet = new Set(prev);
+                    const added = dirsNow.filter(d => !prevSet.has(d));
+                    for (const d of added) {
+                        const targetPath = pathKey + d + '/';
+                        const openJs = `wavCurrentPath='${targetPath}';document.getElementById('wavPath').textContent='/' + wavCurrentPath;wavRefresh();`;
+                        showToast(`✅ New session ready: <b>${d}</b><br><a href="#" onclick="${openJs};return false;">Open folder</a> · <a href="/wav/download-folder?path=${encodeURIComponent('/'+targetPath)}" target="_blank" rel="noopener">Download ZIP</a>`);
+                        try { if (navigator.vibrate) navigator.vibrate(70); } catch(e) {}
+                    }
+                }
+                seenDirsByPath[pathKey] = dirsNow;
+
+                
+                // Folders (hide old 'tmp' folder, only show 'temp')
+                (data.dirs || []).filter(d => d !== 'tmp' && d !== 'trash').forEach(d => {
+                    const btn = document.createElement('div');
+                    btn.className = 'file-row';
+                    btn.innerHTML = '<span>📁 ' + d + '/</span>';
+                    btn.style.cursor = 'pointer';
+                    btn.addEventListener('click', async (ev) => {
+                        if (ev && ev.target && ev.target.closest && ev.target.closest('.file-actions')) return;
+                        const key = 'dir:' + pathKey + d + '/';
+                        
+                        if (!JB_DELETE_MODE) return;
+                        const qc = __quadClickHit(key);
+                        if (!qc.hit) {
+                            return;
+                        }
+
+                        const targetPath = pathKey + d + '/';
+                        jbShowDeleteModal('dir', d + '/', targetPath); return;
+                        try {
+                            const res = await apiFetch('/wav/delete', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({ path: targetPath, kind: 'dir' })
+                            });
+                            const txt = await res.text();
+                            if (!res.ok) { alert('Delete failed: ' + txt); return; }
+                            try { const data = JSON.parse(txt); if (data && data.ok) showToast('Deleted ' + (data.deleted||0) + ' objects'); } catch(e) {}
+                            wavRefresh();
+                        } catch (e) {
+                            alert('Delete error: ' + e);
+                        }
+                    });
+
+                    // Use absolute path, not +=, so double-click can’t duplicate the folder name.
+                    btn.onclick = () => {
+                        wavCurrentPath = pathKey + d + '/';
+                        document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
+                        wavRefresh();
+                    };
+                    filesDiv.appendChild(btn);
+                });
+                
+                // Files
+                (data.files || []).forEach(f => {
+                    const row = document.createElement('div');
+                    row.className = 'file-row';
+                    
+                    let sizeStr = '';
+                    if (f.size) {
+                        const mb = f.size / (1024 * 1024);
+                        sizeStr = mb < 1 ? (f.size / 1024).toFixed(1) + ' KB' : mb.toFixed(1) + ' MB';
+                    }
+                    
+                    const displayName = (wavCurrentPath.startsWith(TENANT_WAV_ROOT + 'temp/')) ? prettyUploadName(f.name) : f.name;
+                    row.innerHTML = '<span>' + getFileIcon(f.name) + ' ' + displayName + (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + ')</small>' : '') + '</span>';
+
+                    row.addEventListener('click', async (ev) => {
+                        if (ev && ev.target && ev.target.closest && ev.target.closest('.file-actions')) return;
+                        const key = 'file:' + wavCurrentPath + f.name;
+                        
+                        if (!JB_DELETE_MODE) return;
+                        const qc = __quadClickHit(key);
+                        if (!qc.hit) {
+                            return;
+                        }
+
+                        const targetPath = wavCurrentPath + f.name;
+                        jbShowDeleteModal('file', (f.name || ''), targetPath); return;
+                        try {
+                            const res = await apiFetch('/wav/delete', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({ path: targetPath, kind: 'file' })
+                            });
+                            const txt = await res.text();
+                            if (!res.ok) { alert('Delete failed: ' + txt); return; }
+                            try { const data = JSON.parse(txt); if (data && data.ok) showToast('Deleted file'); } catch(e) {}
+                            wavRefresh();
+                        } catch (e) {
+                            alert('Delete error: ' + e);
+                        }
+                    });
+                    
+                    const actions = document.createElement('div');
+                    actions.className = 'file-actions';
+                    
+                    if (isAudioFile(f.name)) {
+                        const loadBtn = document.createElement('button');
+                        loadBtn.className = 'btn btn-sm btn-success';
+                        loadBtn.textContent = 'Load';
+                        loadBtn.onclick = async () => {
+                            if (f.size && f.size > 20 * 1024 * 1024) {
+                                if (!confirm('Large file (' + (f.size / (1024 * 1024)).toFixed(1) + ' MB). May take 10-30s to load. Continue?')) return;
+                            }
+                            await apiFetch('/wav/queue', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({file: wavCurrentPath + f.name})
+                            });
+                            refreshQueuedWav();
+                        };
+                        actions.appendChild(loadBtn);
+
+                        // iPhone-friendly play button (inline stream)
+                        const playBtn = document.createElement('a');
+                        playBtn.className = 'btn btn-sm btn-info icon-btn';
+                        playBtn.textContent = '▶︎';
+                        playBtn.title = 'Play';
+                        playBtn.href = '/wav/stream?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                        playBtn.target = '_blank';
+                        playBtn.rel = 'noopener';
+                        actions.appendChild(playBtn);
+                    }
+
+                    // Download button (all file types)
+                    const dlBtn = document.createElement('a');
+                    dlBtn.className = 'btn btn-sm btn-info icon-btn';
+                    dlBtn.textContent = '⬇︎';
+                    dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                    dlBtn.download = f.name;
+                    dlBtn.title = 'Download';
+                    actions.appendChild(dlBtn);
+
+                    const shareBtn = document.createElement('button');
+                    shareBtn.type = 'button';
+                    shareBtn.className = 'btn btn-sm btn-info icon-btn';
+                    shareBtn.textContent = '⤴︎';
+                    shareBtn.title = 'Share';
+                    shareBtn.onclick = () => shareFile(wavCurrentPath + f.name, f.name);
+                    actions.appendChild(shareBtn);
+
+                    // iPhone-friendly "Share MP3" via Shortcuts (downloads then opens share sheet with file attached)
+                    if (String(f.name || '').toLowerCase().endsWith('.mp3')) {
+                        const mp3Btn = document.createElement('button');
+                        mp3Btn.type = 'button';
+                        mp3Btn.className = 'btn btn-sm btn-warning icon-btn';
+                        mp3Btn.textContent = '📎';
+                        mp3Btn.title = 'Send MP3 (Shortcuts)';
+                        mp3Btn.onclick = () => {
+                            const dlUrl = window.location.origin + '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                            const u = shortcutsRunUrl('JamBetter Share MP3', dlUrl);
+                            // Use window.location so iOS treats this as an app handoff.
+                            window.location.href = u;
+                        };
+                        actions.appendChild(mp3Btn);
+                    }
+
+                    
+                    row.appendChild(actions);
+                    filesDiv.appendChild(row);
+                });
+            } catch (e) {
+                console.error('wavRefresh error', e);
+                 try { showToast('⚠️ Browse error: ' + e); } catch(_) { }
+                 try {
+                     const filesDiv = document.getElementById('wavFiles');
+                     if (filesDiv) filesDiv.innerHTML = '<div style="padding:10px;color:#d9534f">Browse error: ' + String(e) + '<br><small>Try Refresh, or open /wav/browse?path=recordings/ directly.</small></div>';
+                 } catch(_) {}
+                 alert('Browse error: ' + e);
+                }
+        }
+
+
+                async function shareFile(filePath, fileName) {
+                    // Share should share a LINK (works reliably on iPhone Chrome).
+                    const streamUrl = window.location.origin + '/wav/stream?file=' + encodeURIComponent(filePath);
+
+                    try {
+                        if (navigator.share) {
+                            await navigator.share({
+                                title: fileName || 'Recording',
+                                text: 'JamBetter recording link',
+                                url: streamUrl
+                            });
+                            return;
+                        }
+                    } catch (e) {
+                        // user cancelled or share failed; fall back below
+                    }
+
+                    // Fallback: copy link
+                    try {
+                        await navigator.clipboard.writeText(streamUrl);
+                        alert('Share link copied to clipboard.');
+                    } catch (e) {
+                        window.prompt('Copy this link:', streamUrl);
+                    }
+                }
+function wavUp() {
+            const parts = wavCurrentPath.replace(/\/$/, '').split('/').filter(Boolean);
+            if (parts.length > 0) {
+                parts.pop();
+                wavCurrentPath = parts.length === 0 ? TENANT_WAV_ROOT : parts.join('/') + '/';
+                if (!wavCurrentPath.startsWith(TENANT_WAV_ROOT)) wavCurrentPath = TENANT_WAV_ROOT;
+            }
+            document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
+            wavRefresh();
+        }
+
+        async function tmpTrackUpload() {
+            const input = document.getElementById('tmpTrackUploadInput');
+            if (!input.files || !input.files[0]) {
+                alert('Please select a file first');
+                return;
+            }
+            const file = input.files[0];
+            const form = new FormData();
+            form.append('file', file);
+            try {
+                const res = await fetch('/wav/tmp-upload', { method: 'POST', body: form });
+                const data = await res.json();
+                if (data.ok) {
+                    alert('Uploaded: ' + data.file);
+                    wavRefresh();
+                } else {
+                    alert('Upload failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Upload error: ' + e);
+            }
+        }
+
+        // Other actions
+        async function restartBotJamulus() {
+            if (!confirm('Restart the bot?')) return;
+            try {
+                await apiFetch('/bot/restart-jamulus', { method: 'POST' });
+                alert('Restart requested.');
+            } catch (e) {
+                alert('Error.');
+            }
+        }
+
+        // Status & Sessions
+        async function refreshStatuses() {
+            try {
+                const res = await apiFetch('/get-status');
+                const data = await res.json();
+                
+                // Recording
+                if (data.recording_state && data.recording_state !== recordingState) {
+                    updateRecordingButton(data.recording_state);
+                }
+                
+                // Jamulus
+                const jamStatus = document.getElementById('jamStatus');
+                if (data.jamulus_running) {
+                    jamStatus.textContent = 'Jamulus Server: Running';
+                    jamStatus.style.background = '#5cb85c';
+                } else {
+                    jamStatus.textContent = 'Jamulus Server: Stopped';
+                    jamStatus.style.background = '#d9534f';
+                }
+            } catch (e) {}
+            
+            // Metronome status
+            try {
+                const metroRes = await apiFetch('/metronome/status');
+                const metroData = await metroRes.json();
+                const isRunning = metroData.running || false;
+                // Do not overwrite user-selected signature from status polling.
+                // (backend can lag briefly; forcing value here causes selector snap-back)
+                if (isRunning !== metronomeRunning) {
+                    metronomeRunning = isRunning;
+                    const btn = document.getElementById('metroToggleBtn');
+                    if (btn) {
+                        btn.textContent = isRunning ? 'Stop' : 'Start';
+                        btn.className = isRunning ? 'btn btn-danger' : 'btn btn-success';
+                    }
+                }
+                if (metroData.tone) {
+                    const t = String(metroData.tone);
+                    const radio = document.querySelector(`input[name="metroTone"][value="${t}"]`);
+                    if (radio) radio.checked = true;
+                }
+                if (metroData.freq) {
+                    const f = parseInt(metroData.freq, 10);
+                    const slider = document.getElementById('metroToneFreq');
+                    if (slider && Number.isFinite(f)) slider.value = String(f);
+                    if (Number.isFinite(f)) document.getElementById('toneFreqVal').textContent = String(f);
+                }
+            } catch (e) {}
+            
+            refreshPlaybackStatus();
+            updatePlaybackButton();
+        }
+
+        // Init
+        window.onload = function() {
+            const inc = document.getElementById('includeInjector');
+            if (inc) {
+                inc.checked = localStorage.getItem('includeInjector') === '1';
+                inc.addEventListener('change', () => localStorage.setItem('includeInjector', inc.checked ? '1' : '0'));
+            }
+            wavRefresh();
+            refreshQueuedWav();
+            refreshStatuses();
+            setInterval(refreshStatuses, 3000);
+        };
+    
+        function openPracticeWithTrack() {
+            const track = document.getElementById('queuedWavDisplay').textContent.trim();
+            if (!track || track === '(none)') {
+                window.open('/practice', '_blank');
+            } else {
+                window.open('/practice?s3=' + encodeURIComponent(track), '_blank');
+            }
+        }
+
+        function openTunerWithTrack() {
+            const track = document.getElementById('queuedWavDisplay').textContent.trim();
+            if (!track || track === '(none)') {
+                window.open('/pitch', '_blank');
+            } else {
+                window.open('/pitch?s3=' + encodeURIComponent(track), '_blank');
+            }
+        }
+    </script>
+
+<div id="jbDeleteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#111;color:#fff;max-width:520px;width:92%;border-radius:12px;padding:16px 16px 12px;box-shadow:0 12px 32px rgba(0,0,0,0.6);">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <div style="font-size:16px;font-weight:700;">Delete</div>
+      <button class="btn btn-sm" onclick="jbHideDeleteModal()">Close</button>
+    </div>
+    <div id="jbDeleteModalBody" style="margin-top:10px;font-size:14px;line-height:1.35;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-sm" onclick="jbHideDeleteModal()">Cancel</button>
+      <button id="jbDeleteConfirmBtn" class="btn btn-sm btn-danger">Delete</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.75);">
+      Note: delete moves items to <code>trash/</code> and they expire on the 15‑day retention cycle.
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

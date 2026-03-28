@@ -22,10 +22,25 @@ This server provides:
 | Unified Ops Dashboard | `ops_dashboard_app.py` | Fleet status + start/stop controls + operator pins |
 | Track Player | `trackbot/app.py` | Playback system for backing tracks |
 | UI Template | `templates/updated_toggle_app_script.html` | Web interface |
+| Practice App | `pitch-monitor/` | Customer-facing pitch/practice web assets |
 | Uploader | `jamulus_uploader.py` | S3 upload functionality |
 | Level Monitor | `listenerbot_level.py` | Audio level monitoring |
 | Protocol Bot | `listenerbot_protocol.py` | Session protocol/management |
 | Silence Detector | `listenerbot_silence.py` | Silence detection for recording |
+
+
+## Repo Role
+
+This repository is the **canonical product/runtime repo** for JamBetter.
+
+Anything that is deployed to customer-facing hosts or changes live app behavior belongs here, including:
+- `toggle_app.py`
+- `templates/updated_toggle_app_script.html`
+- `trackbot/`
+- `config/`, `deploy/`, `docs/`
+- `pitch-monitor/` practice app assets
+
+Operational notes, assistant memory, and OpenClaw-specific working files belong in `JamBetter-Claw`, not here.
 
 ### Systemd Services
 
