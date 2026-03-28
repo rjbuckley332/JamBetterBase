@@ -103,7 +103,28 @@ def start_playback(relpath, channel='stereo'):
     if channel not in ('stereo', 'left', 'right'):
         channel = 'stereo'
 
-    full = f"{RCLONE_REMOTE.rstrip('/')}/{relpath.lstrip('/')}"
+    # --- Path resolution ---
+    # relpath from toggle_app uses browse paths like "recordings/temp/foo.mp3"
+    # or "recordings/<tenant>/2026-03-27/bar.wav".
+    # RCLONE_REMOTE may be tenant-scoped (e.g. .../recordings/seigr).
+    stripped = relpath.lstrip("/")
+    if stripped.startswith("recordings/"):
+        stripped = stripped[len("recordings/"):]
+    remote_base = RCLONE_REMOTE.rstrip("/")
+    first_seg = stripped.split("/", 1)[0].lower() if "/" in stripped else stripped.lower()
+    shared_prefixes = {"tracks"}  # temp is now per-tenant
+    remote_parts = remote_base.rsplit("/recordings/", 1)
+    if len(remote_parts) == 2 and remote_parts[1]:
+        remote_tenant = remote_parts[1].rstrip("/")
+        recordings_root = remote_parts[0] + "/recordings"
+        if first_seg in shared_prefixes:
+            full = f"{recordings_root}/{stripped}"
+        elif stripped.startswith(remote_tenant + "/"):
+            full = f"{remote_base}/{stripped[len(remote_tenant)+1:]}"
+        else:
+            full = f"{remote_base}/{stripped}"
+    else:
+        full = f"{remote_base}/{stripped}"
 
     import hashlib, tempfile
     from pathlib import Path

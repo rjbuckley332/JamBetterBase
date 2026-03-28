@@ -365,9 +365,9 @@
                         <div style="display:flex;gap:8px;align-items:center;">
                             <label class="btn btn-sm" style="position:relative;overflow:hidden;cursor:pointer;margin:0;">
                                 Choose File
-                                <input type="file" id="tmpTrackUploadInput" accept="audio/*" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
+                                <input type="file" id="tmpTrackUploadInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.mp4,.m4v" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
                             </label>
-                            <span class="help-tooltip" title="Upload your own backing track here. It will appear in the temp folder below.">❓</span>
+                            <span class="help-tooltip" title="Upload your own backing track here. It will appear in your temp folder.">❓</span>
                             <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
                         </div>
                     </div>
@@ -950,13 +950,9 @@
                 seenDirsByPath[pathKey] = dirsNow;
 
                 
-                // Folders: hide trash/archive noise, keep temp visible, and inject temp at
-                // recordings root if tenant scoping made it disappear from the backend listing.
+                // Folders: hide trash/archive noise. temp is per-tenant, shows naturally.
                 const hiddenDirs = new Set(['tmp', 'trash', '.trash', '.archived']);
                 let visibleDirs = (data.dirs || []).filter(d => !hiddenDirs.has(String(d || '').toLowerCase()));
-                if (wavCurrentPath === 'recordings/' && !visibleDirs.includes('temp')) {
-                    visibleDirs = ['temp', ...visibleDirs];
-                }
                 visibleDirs.forEach(d => {
                     const btn = document.createElement('div');
                     btn.className = 'file-row';
@@ -981,7 +977,7 @@
                         sizeStr = mb < 1 ? (f.size / 1024).toFixed(1) + ' KB' : mb.toFixed(1) + ' MB';
                     }
                     
-                    const displayName = (wavCurrentPath.includes('recordings/temp/')) ? prettyUploadName(f.name) : f.name;
+                    const displayName = (wavCurrentPath.includes('/temp/')) ? prettyUploadName(f.name) : f.name;
                     row.innerHTML = '<span>' + getFileIcon(f.name) + ' ' + displayName + (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + ')</small>' : '') + '</span>';
                     
                     const actions = document.createElement('div');

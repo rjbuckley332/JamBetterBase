@@ -340,6 +340,53 @@ def s3_cp(aws_cli: str, region: str, src: Path, dest: str) -> tuple[int, str]:
     return run(cmd)
 
 
+def _rewrite_lof_for_uploaded_wavs(lof_src: Path, wav_name_map: dict[str, str]) -> Path:
+    """Return a rewritten .lof where referenced wav basenames match uploaded-friendly names.
+
+    Also drops LOF lines that reference WAVs we did not upload (e.g. excluded tracks),
+    so Audacity won't error on missing files.
+    """
+    if not wav_name_map:
+        return lof_src
+
+    out_lines: list[str] = []
+    # replace longer names first to avoid accidental partial overlaps
+    repl = sorted(wav_name_map.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+    wav_token_re = re.compile(r'([^\s\"]+\.wav)', re.IGNORECASE)
+
+    for line in lof_src.read_text(encoding='utf-8', errors='replace').splitlines(True):
+        m = wav_token_re.search(line)
+        if m:
+            tok = m.group(1)
+            base = os.path.basename(tok)
+            if base not in wav_name_map:
+                # skip lines referencing excluded/unuploaded wavs
+                continue
+        for old, new in repl:
+            line = line.replace(old, new)
+        out_lines.append(line)
+
+    tmp = lof_src.with_name(lof_src.name + '.jb_rewritten')
+    tmp.write_text(''.join(out_lines), encoding='utf-8')
+    return tmp
+
+
+def _rewrite_rpp_for_uploaded_wavs(rpp_src: Path, wav_name_map: dict[str, str]) -> Path:
+    """Return a rewritten .rpp where referenced wav basenames match uploaded-friendly names."""
+    if not wav_name_map:
+        return rpp_src
+
+    txt = rpp_src.read_text(encoding='utf-8', errors='replace')
+    repl = sorted(wav_name_map.items(), key=lambda kv: len(kv[0]), reverse=True)
+    for old, new in repl:
+        txt = txt.replace(old, new)
+
+    tmp = rpp_src.with_name(rpp_src.name + '.jb_rewritten')
+    tmp.write_text(txt, encoding='utf-8')
+    return tmp
+
+
 def main():
     recordings_dir = Path(_env('RECORDINGS_DIR', '/var/lib/jamulus/recordings'))
     uploaded_dir = recordings_dir / '.uploaded'
@@ -410,11 +457,13 @@ def main():
                 if include_injector is None:
                     include_injector = include_injector_enabled()
                 # Upload singer wavs (friendly names; injector optional)
+                wav_name_map: dict[str, str] = {}
                 for w in sorted(wavs):
                     if wav_should_exclude(w.name, include_injector=include_injector):
                         continue
                     part4 = _client_code_from_wav(w)
                     dest_name = f"{fold6}_{yymmdd}_{part4}.wav"
+                    wav_name_map[w.name] = dest_name
                     dest = s3_base + dest_name
                     rc, out = s3_cp(aws_cli, aws_region, w, dest)
                     if rc != 0:
@@ -432,24 +481,26 @@ def main():
                 else:
                     print(f"[uploader] NOTE: mix missing (or too small): {mix_src.name}")
 
-                # Upload RPP (Reaper project) file with friendly names
+                # Upload RPP (Reaper project) with rewritten internal wav references
                 rpp_files = sorted(d.glob('*.rpp'))
                 for i, rpp in enumerate(rpp_files, start=1):
                     suffix = f"{i:02d}" if len(rpp_files) > 1 else ""
                     dest_name = f"{fold6}_{yymmdd}_PROJ{suffix}.rpp"
+                    src = _rewrite_rpp_for_uploaded_wavs(rpp, wav_name_map)
                     dest = s3_base + dest_name
-                    rc, out = s3_cp(aws_cli, aws_region, rpp, dest)
+                    rc, out = s3_cp(aws_cli, aws_region, src, dest)
                     if rc != 0:
                         ok_all = False
                         print(f"[uploader] ERROR s3_cp rpp -> {dest}\n{out}")
                     else:
                         print(f"[uploader] uploaded: {dest_name}")
 
-                # Upload LOF (Jamulus file list) with friendly name
+                # Upload LOF (Jamulus file list) rewritten to match uploaded wav names
                 if lof:
                     dest_name = f"{fold6}_{yymmdd}_LIST.lof"
+                    src = _rewrite_lof_for_uploaded_wavs(lof, wav_name_map)
                     dest = s3_base + dest_name
-                    rc, out = s3_cp(aws_cli, aws_region, lof, dest)
+                    rc, out = s3_cp(aws_cli, aws_region, src, dest)
                     if rc != 0:
                         ok_all = False
                         print(f"[uploader] ERROR s3_cp lof -> {dest}\n{out}")

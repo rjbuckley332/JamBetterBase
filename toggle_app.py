@@ -106,8 +106,27 @@ LIBRARY_AWS_REGION = os.getenv('LIBRARY_AWS_REGION', 'us-east-1')
 # Keys live under: vps/<vps-id>/recordings/ and vps/<vps-id>/tracks/
 
 # ---------- TRACKBOT (Injector WAV Playback) ----------
-TRACKBOT_BASE_URL = os.getenv("TRACKBOT_BASE_URL", "http://172.16.31.3:8088").rstrip("/")
+TRACKBOT_BASE_URL = os.getenv("TRACKBOT_BASE_URL", "http://127.0.0.1:8088").rstrip("/")
 TRACKBOT_QUEUE_FILE = os.getenv("TRACKBOT_QUEUE_FILE", "/tmp/trackbot_queue.json")
+
+# Per-tenant TrackBot routing (port + queue file)
+TENANT_TRACKBOT_PORTS = {
+    'pd':    int(os.getenv('TRACKBOT_PORT_PD',    '8088')),
+    'vc':    int(os.getenv('TRACKBOT_PORT_VC',    '8089')),
+    'seigr': int(os.getenv('TRACKBOT_PORT_SEIGR', '8090')),
+}
+
+def _trackbot_url(tenant=None):
+    """Return the TrackBot base URL for the given tenant."""
+    if tenant and tenant in TENANT_TRACKBOT_PORTS:
+        return f"http://127.0.0.1:{TENANT_TRACKBOT_PORTS[tenant]}"
+    return TRACKBOT_BASE_URL
+
+def _queue_file(tenant=None):
+    """Return the queue file path for the given tenant."""
+    if tenant and tenant != 'pd':
+        return f"/tmp/trackbot_queue_{tenant}.json"
+    return TRACKBOT_QUEUE_FILE
 SUPPORT_BOT_URL = os.getenv("SUPPORT_BOT_URL", "https://t.me/JamBetterBot").strip()
 SUPPORT_WELCOME_DAYS = int(os.getenv("SUPPORT_WELCOME_DAYS", "6"))
 SUPPORT_WELCOME_PHONE = (os.getenv("SUPPORT_WELCOME_PHONE", "") or "").strip()
@@ -208,22 +227,25 @@ def _require_ops_token():
     return True, None
 
 
-def _queue_read() -> dict:
+def _queue_read(tenant=None) -> dict:
+    qf = _queue_file(tenant)
     try:
-        with open(TRACKBOT_QUEUE_FILE, "r") as f:
+        with open(qf, "r") as f:
             return json.load(f) or {}
     except Exception:
         return {}
 
-def _queue_write(d: dict):
-    tmp = TRACKBOT_QUEUE_FILE + ".tmp"
+def _queue_write(d: dict, tenant=None):
+    qf = _queue_file(tenant)
+    tmp = qf + ".tmp"
     with open(tmp, "w") as f:
         json.dump(d, f)
-    os.replace(tmp, TRACKBOT_QUEUE_FILE)
+    os.replace(tmp, qf)
 
-def _queue_clear():
+def _queue_clear(tenant=None):
+    qf = _queue_file(tenant)
     try:
-        os.remove(TRACKBOT_QUEUE_FILE)
+        os.remove(qf)
     except FileNotFoundError:
         pass
 
@@ -303,7 +325,7 @@ def _apply_tenant_scope(area: str, sub: str, *, for_listing: bool = False) -> tu
     tenant = _tenant_slug_from_request()
     sub = (sub or '').strip('/').replace('\\', '/')
     if area == 'recordings' and tenant:
-        shared_roots = {'temp'}
+        shared_roots = set()  # temp is now per-tenant
         hidden_roots = {'trash', '.trash', '.archived'}
         if not sub:
             sub = tenant
@@ -745,7 +767,9 @@ def metronome_start():
     bpm = int(d.get('bpm') or 100)
     vol = float(d.get('vol') or 0.8)
     sig = (d.get('sig') or '4/4').strip()
-    url = f"{TRACKBOT_BASE_URL}/api/metronome/start?bpm={bpm}&vol={vol}&sig={urllib.parse.quote(sig, safe='')}"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/metronome/start?bpm={bpm}&vol={vol}&sig={urllib.parse.quote(sig, safe='')}"
     code, body = _http_get(url, timeout=5.0)
     try:
         data = json.loads(body) if body else {"ok": False}
@@ -759,7 +783,9 @@ def metronome_start():
 def metronome_stop():
     ok, resp = _require_passcode()
     if not ok: return resp
-    url = f"{TRACKBOT_BASE_URL}/api/metronome/stop"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/metronome/stop"
     code, body = _http_get(url, timeout=5.0)
     try:
         data = json.loads(body) if body else {"ok": False}
@@ -773,7 +799,9 @@ def metronome_stop():
 def metronome_status():
     ok, resp = _require_passcode()
     if not ok: return resp
-    url = f"{TRACKBOT_BASE_URL}/api/metronome/status"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/metronome/status"
     code, body = _http_get(url, timeout=3.0)
     try:
         data = json.loads(body) if body else {"ok": False}
@@ -1162,7 +1190,9 @@ def _support_reply(intent: str, text: str = '', token: str = '') -> dict:
         }
 
     if intent == 'restart':
-        url = f"{TRACKBOT_BASE_URL}/api/jamulus/restart"
+        tenant = _tenant_slug_from_request()
+        tb = _trackbot_url(tenant)
+        url = f"{tb}/api/jamulus/restart"
         code, body = _http_get(url, timeout=30.0)
         try:
             data = json.loads(body) if body else {'ok': False}
@@ -1337,7 +1367,9 @@ def wav_browse():
 def bot_hardreset_jamulus():
     ok, resp = _require_passcode()
     if not ok: return resp
-    url = f"{TRACKBOT_BASE_URL}/api/jamulus/hardreset"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/jamulus/hardreset"
     code, body = _http_get(url, timeout=30.0)
     try:
         data = json.loads(body) if body else {"ok": False, "error": "empty response"}
@@ -1351,10 +1383,11 @@ def bot_hardreset_jamulus():
 def wav_queue():
     ok, resp = _require_passcode()
     if not ok: return resp
+    tenant = _tenant_slug_from_request()
     if request.method == 'GET':
-        return jsonify(_queue_read())
+        return jsonify(_queue_read(tenant))
     if request.method == 'DELETE':
-        _queue_clear()
+        _queue_clear(tenant)
         return 'OK'
 
     d = request.get_json(force=True) or {}
@@ -1365,28 +1398,30 @@ def wav_queue():
     channel = (d.get('channel') or 'stereo').strip().lower()
     if channel not in ('stereo', 'left', 'right'):
         channel = 'stereo'
-    q = _queue_read()
+    q = _queue_read(tenant)
     q['file'] = wav
     q['channel'] = channel
     q['set_at'] = _now_local().isoformat()
-    _queue_write(q)
+    _queue_write(q, tenant)
     return 'OK'
 
 @app.route('/wav/play-queued', methods=['POST'])
 def wav_play_queued():
     ok, resp = _require_passcode()
     if not ok: return resp
-    q = _queue_read()
+    tenant = _tenant_slug_from_request()
+    q = _queue_read(tenant)
     wav = (q.get('file') or '').strip()
     if not wav:
         return jsonify({'ok': True, 'skipped': True, 'reason': 'no queued wav'})
 
-    # Tell injector TrackBot to play
+    # Tell tenant-specific TrackBot to play
     from urllib.parse import quote
     channel = (q.get('channel') or 'stereo').strip().lower()
     if channel not in ('stereo', 'left', 'right'):
         channel = 'stereo'
-    url = f"{TRACKBOT_BASE_URL}/play?file={quote(wav)}&channel={channel}"
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/play?file={quote(wav)}&channel={channel}"
     code, body = _http_get(url, timeout=20.0)
     if code and 200 <= code < 400:
         return jsonify({'ok': True, 'queued': wav, 'code': code})
@@ -1396,7 +1431,9 @@ def wav_play_queued():
 def wav_stop():
     ok, resp = _require_passcode()
     if not ok: return resp
-    url = f"{TRACKBOT_BASE_URL}/stop"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/stop"
     code, body = _http_get(url, timeout=3.0)
     if code and 200 <= code < 400:
         return jsonify({'ok': True, 'code': code})
@@ -1420,7 +1457,9 @@ def wav_auto_restart():
 def wav_status():
     ok, resp = _require_passcode()
     if not ok: return resp
-    url = f"{TRACKBOT_BASE_URL}/api/playback/status"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/playback/status"
     code, body = _http_get(url, timeout=3.0)
     try:
         data = json.loads(body) if body else {"ok": False}
@@ -1546,12 +1585,13 @@ def wav_tmp_upload():
     filepath = os.path.join(tmp_dir, filename)
     f.save(filepath)
     # Upload to S3 in recordings/temp/
-    key = f"vps/{LIBRARY_VPS_ID}/recordings/temp/{filename}"
+    upload_tenant = _tenant_slug_from_request() or "shared"
+    key = f"vps/{LIBRARY_VPS_ID}/recordings/{upload_tenant}/temp/{filename}"
     try:
         s3 = boto3.client("s3", region_name=LIBRARY_AWS_REGION)
         s3.upload_file(filepath, LIBRARY_S3_BUCKET, key)
         os.remove(filepath)
-        return jsonify({"ok": True, "file": f"recordings/temp/{filename}"})
+        return jsonify({"ok": True, "file": f"recordings/{upload_tenant}/temp/{filename}"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1879,7 +1919,9 @@ def api_jamulus_restart():
 def bot_restart_jamulus():
     ok, resp = _require_passcode()
     if not ok: return resp
-    url = f"{TRACKBOT_BASE_URL}/api/jamulus/restart"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/jamulus/restart"
     code, body = _http_get(url, timeout=30.0)
     try:
         data = json.loads(body) if body else {"ok": False, "error": "empty response"}
@@ -1990,7 +2032,9 @@ def wav_restart():
     if not ok:
         return resp
     # Restart current playback on trackbot
-    url = f"{TRACKBOT_BASE_URL}/api/restart"
+    tenant = _tenant_slug_from_request()
+    tb = _trackbot_url(tenant)
+    url = f"{tb}/api/restart"
     code, body = _http_get(url, timeout=5.0)
     try:
         data = json.loads(body) if body else {"ok": False}
