@@ -1357,11 +1357,14 @@ def wav_browse():
         dirs = list(result.get('dirs', []))
         files = result.get('files', [])
 
-        # On tenant hosts, expose the shared recordings/library root alongside the
-        # tenant-scoped recordings tree so every tenant can browse global content.
+        # On tenant hosts, expose a stable shared library root and the tenant temp
+        # folder alongside the tenant-scoped recordings tree, even if temp is empty.
         if area == 'recordings' and (sub or '') == ((_tenant_slug_from_request() or '') + '/'):
             if 'library' not in dirs:
                 dirs.insert(0, 'library')
+            if 'temp' not in dirs:
+                insert_at = 1 if dirs and dirs[0] == 'library' else 0
+                dirs.insert(insert_at, 'temp')
 
         return jsonify({
             "ok": True,
