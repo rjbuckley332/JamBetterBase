@@ -1493,6 +1493,8 @@ def wav_download():
     area, rel = _safe_library_file_path(file_path)
     if not area:
         return jsonify({"ok": False, "error": "file not allowed for this tenant"}), 403
+    if area == 'recordings' and rel.startswith('library/'):
+        return jsonify({"ok": False, "error": "downloads disabled for shared library"}), 403
     key = _lib_prefix(area, '') + rel
     res = _s3_presign(key, expires=300, attachment=True)
     if not res.get("ok"):
@@ -1528,6 +1530,8 @@ def wav_download_folder():
     area, sub = _safe_library_path_subpath(request.args.get('path') or '')
     if not area:
         return jsonify({"ok": False, "error": "invalid or missing folder path"}), 400
+    if area == 'recordings' and (sub or '').startswith('library/'):
+        return jsonify({"ok": False, "error": "downloads disabled for shared library"}), 403
 
     prefix = _lib_prefix(area, sub)
     try:

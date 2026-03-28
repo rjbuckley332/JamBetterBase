@@ -358,7 +358,7 @@
                     <div class="nav-left">
                         <button class="btn btn-sm" onclick="wavUp()">Up</button>
                         <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
-                        <button class="btn btn-sm btn-info" onclick="downloadCurrentFolder()">Download Folder ZIP</button>
+                        <button id="downloadFolderBtn" class="btn btn-sm btn-info" onclick="downloadCurrentFolder()">Download Folder ZIP</button>
                     </div>
                     <div class="upload-section" style="flex-direction:column;align-items:flex-end;">
                         <div id="uploadFileName" style="font-size:12px;color:rgba(255,255,255,0.8);margin-bottom:4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</div>
@@ -918,8 +918,23 @@
         }
 
 
+        function isSharedLibraryPath(path) {
+            const p = String(path || '').replace(/^\/+/, '');
+            return p === 'recordings/library' || p.startsWith('recordings/library/');
+        }
+
+        function updateDownloadVisibility() {
+            const btn = document.getElementById('downloadFolderBtn');
+            if (!btn) return;
+            btn.style.display = isSharedLibraryPath(wavCurrentPath) ? 'none' : '';
+        }
+
         function downloadCurrentFolder() {
             const p = wavCurrentPath || 'recordings/';
+            if (isSharedLibraryPath(p)) {
+                showToast('Shared library downloads are disabled.');
+                return;
+            }
             if (p === 'recordings/' || p === 'tracks/') {
                 if (!confirm('Download the entire ' + p.replace('/', '') + ' library as one ZIP? This can be large.')) return;
             }
@@ -932,6 +947,7 @@
                 const data = await res.json();
                 const filesDiv = document.getElementById('wavFiles');
                 filesDiv.innerHTML = '';
+                updateDownloadVisibility();
 
                 // New-folder notification (in-page)
                 const pathKey = wavCurrentPath;
@@ -1011,37 +1027,41 @@
                         actions.appendChild(playBtn);
                     }
 
-                    // Download button (all file types)
-                    const dlBtn = document.createElement('a');
-                    dlBtn.className = 'btn btn-sm btn-info icon-btn';
-                    dlBtn.textContent = '⬇︎';
-                    dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
-                    dlBtn.download = f.name;
-                    dlBtn.title = 'Download';
-                    actions.appendChild(dlBtn);
+                    const inSharedLibrary = isSharedLibraryPath(wavCurrentPath);
 
-                    const shareBtn = document.createElement('button');
-                    shareBtn.type = 'button';
-                    shareBtn.className = 'btn btn-sm btn-info icon-btn';
-                    shareBtn.textContent = '⤴︎';
-                    shareBtn.title = 'Share';
-                    shareBtn.onclick = () => shareFile(wavCurrentPath + f.name, f.name);
-                    actions.appendChild(shareBtn);
+                    if (!inSharedLibrary) {
+                        // Download button (all file types)
+                        const dlBtn = document.createElement('a');
+                        dlBtn.className = 'btn btn-sm btn-info icon-btn';
+                        dlBtn.textContent = '⬇︎';
+                        dlBtn.href = '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                        dlBtn.download = f.name;
+                        dlBtn.title = 'Download';
+                        actions.appendChild(dlBtn);
 
-                    // iPhone-friendly "Share MP3" via Shortcuts (downloads then opens share sheet with file attached)
-                    if (String(f.name || '').toLowerCase().endsWith('.mp3')) {
-                        const mp3Btn = document.createElement('button');
-                        mp3Btn.type = 'button';
-                        mp3Btn.className = 'btn btn-sm btn-warning icon-btn';
-                        mp3Btn.textContent = '📎';
-                        mp3Btn.title = 'Send MP3 (Shortcuts)';
-                        mp3Btn.onclick = () => {
-                            const dlUrl = window.location.origin + '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
-                            const u = shortcutsRunUrl('JamBetter Share MP3', dlUrl);
-                            // Use window.location so iOS treats this as an app handoff.
-                            window.location.href = u;
-                        };
-                        actions.appendChild(mp3Btn);
+                        const shareBtn = document.createElement('button');
+                        shareBtn.type = 'button';
+                        shareBtn.className = 'btn btn-sm btn-info icon-btn';
+                        shareBtn.textContent = '⤴︎';
+                        shareBtn.title = 'Share';
+                        shareBtn.onclick = () => shareFile(wavCurrentPath + f.name, f.name);
+                        actions.appendChild(shareBtn);
+
+                        // iPhone-friendly "Share MP3" via Shortcuts (downloads then opens share sheet with file attached)
+                        if (String(f.name || '').toLowerCase().endsWith('.mp3')) {
+                            const mp3Btn = document.createElement('button');
+                            mp3Btn.type = 'button';
+                            mp3Btn.className = 'btn btn-sm btn-warning icon-btn';
+                            mp3Btn.textContent = '📎';
+                            mp3Btn.title = 'Send MP3 (Shortcuts)';
+                            mp3Btn.onclick = () => {
+                                const dlUrl = window.location.origin + '/wav/download?file=' + encodeURIComponent(wavCurrentPath + f.name);
+                                const u = shortcutsRunUrl('JamBetter Share MP3', dlUrl);
+                                // Use window.location so iOS treats this as an app handoff.
+                                window.location.href = u;
+                            };
+                            actions.appendChild(mp3Btn);
+                        }
                     }
                     
                     row.appendChild(actions);
