@@ -20,6 +20,12 @@ JAMULUS_IN_L = os.environ.get('TRACKBOT_JAMULUS_IN_L', 'Jamulus Injector-bot:inp
 JAMULUS_IN_R = os.environ.get('TRACKBOT_JAMULUS_IN_R', 'Jamulus Injector-bot:input right')
 PLAYER_NAME = os.environ.get('TRACKBOT_PLAYER_NAME', 'trackbot_player')
 METRO_NAME = os.environ.get('TRACKBOT_METRO_NAME', 'trackbot_metro')
+TENANT_SLUG = os.environ.get('TRACKBOT_TENANT_SLUG', '')
+if not TENANT_SLUG:
+    for prefix, value in (("trackbot_player_", PLAYER_NAME), ("trackbot_metro_", METRO_NAME)):
+        if value.startswith(prefix) and len(value) > len(prefix):
+            TENANT_SLUG = value[len(prefix):]
+            break
 
 state = {
     'lock': threading.Lock(),
@@ -76,6 +82,10 @@ def stop_playback():
         proc = state['proc']
         state['proc'] = None
         state['now'] = None
+    try:
+        _disconnect_pipewire_outputs(PLAYER_NAME)
+    except Exception:
+        pass
     if proc and proc.poll() is None:
         try:
             proc.terminate()
@@ -178,13 +188,7 @@ def start_playback(relpath, channel='stereo'):
                     if ln == want_l: out_l = ln
                     elif ln == want_r: out_r = ln
                     elif ln == want_m: out_mono = ln
-            if out_l and out_r:
-                subprocess.run(['pw-link', out_l, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
-                subprocess.run(['pw-link', out_r, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
-                return
-            if out_mono:
-                subprocess.run(['pw-link', out_mono, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
-                subprocess.run(['pw-link', out_mono, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+            if _link_pipewire_outputs(out_l, out_r, out_mono):
                 return
             time.sleep(0.1)
         with state['lock']:
@@ -351,15 +355,85 @@ def _pw_env():
     return env
 
 
+def _pw_inputs() -> set[str]:
+    out = subprocess.run(['pw-link', '-i'], capture_output=True, text=True, env=_pw_env())
+    if out.returncode != 0:
+        return set()
+    return {ln.strip() for ln in out.stdout.splitlines() if ln.strip()}
+
+
+def _jamulus_port_candidates(configured: str, side: str) -> list[str]:
+    candidates: list[str] = []
+
+    def add(value: str | None):
+        if value and value not in candidates:
+            candidates.append(value)
+
+    add(configured)
+    if configured:
+        if 'Injector-bot' in configured:
+            add(configured.replace('Injector-bot', 'Jukebox'))
+        if 'Jukebox' in configured:
+            add(configured.replace('Jukebox', 'Injector-bot'))
+    if TENANT_SLUG:
+        add(f'Jamulus Jukebox-{TENANT_SLUG}:input {side}')
+        add(f'Jamulus Injector-bot-{TENANT_SLUG}:input {side}')
+    return candidates
+
+
+def _resolve_jamulus_inputs() -> tuple[str | None, str | None]:
+    inputs = _pw_inputs()
+    left_candidates = _jamulus_port_candidates(JAMULUS_IN_L, 'left')
+    right_candidates = _jamulus_port_candidates(JAMULUS_IN_R, 'right')
+    left = next((port for port in left_candidates if port in inputs), None)
+    right = next((port for port in right_candidates if port in inputs), None)
+    if left and right:
+        return left, right
+    with state['lock']:
+        state['last_err'] = (
+            'Jamulus input ports not found. '
+            f'left candidates={left_candidates}; right candidates={right_candidates}'
+        )
+    return left, right
+
+
+def _link_pipewire_outputs(out_l: str | None, out_r: str | None, out_mono: str | None) -> bool:
+    jam_l, jam_r = _resolve_jamulus_inputs()
+    if not jam_l or not jam_r:
+        return False
+    if out_l and out_r:
+        subprocess.run(['pw-link', out_l, jam_l], capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-link', out_r, jam_r], capture_output=True, text=True, env=_pw_env())
+        return True
+    if out_mono:
+        subprocess.run(['pw-link', out_mono, jam_l], capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-link', out_mono, jam_r], capture_output=True, text=True, env=_pw_env())
+        return True
+    return False
+
+
+def _disconnect_pipewire_outputs(node_name: str):
+    jam_l, jam_r = _resolve_jamulus_inputs()
+    if jam_l:
+        for out_name in ('output_FL', 'output_MONO'):
+            subprocess.run(['pw-link', '-d', f'{node_name}:{out_name}', jam_l], capture_output=True, text=True, env=_pw_env())
+    if jam_r:
+        for out_name in ('output_FR', 'output_MONO'):
+            subprocess.run(['pw-link', '-d', f'{node_name}:{out_name}', jam_r], capture_output=True, text=True, env=_pw_env())
+
+
 def _connect_port_to_jamulus(port: str):
+    jam_l, jam_r = _resolve_jamulus_inputs()
+    if not jam_l or not jam_r:
+        return
     # Ensure Jamulus injector inputs are not accidentally fed from dummy capture ports.
     try:
-        subprocess.run(['pw-jack','jack_disconnect', 'system:capture_1', JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-jack','jack_disconnect', 'system:capture_2', JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-jack','jack_disconnect', 'system:capture_1', jam_l], capture_output=True, text=True, env=_pw_env())
+        subprocess.run(['pw-jack','jack_disconnect', 'system:capture_2', jam_r], capture_output=True, text=True, env=_pw_env())
     except Exception:
         pass
-    subprocess.run(['pw-jack','jack_connect', port, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
-    subprocess.run(['pw-jack','jack_connect', port, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+    subprocess.run(['pw-jack','jack_connect', port, jam_l], capture_output=True, text=True, env=_pw_env())
+    subprocess.run(['pw-jack','jack_connect', port, jam_r], capture_output=True, text=True, env=_pw_env())
 
 
 
@@ -432,13 +506,7 @@ def _apply_metronome_now(bpm: int, volume: float, signature: str = "4/4", tone: 
                     if ln == f'{METRO_NAME}:output_FL': out_l = ln
                     elif ln == f'{METRO_NAME}:output_FR': out_r = ln
                     elif ln == f'{METRO_NAME}:output_MONO': out_mono = ln
-            if out_l and out_r:
-                subprocess.run(['pw-link', out_l, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
-                subprocess.run(['pw-link', out_r, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
-                return
-            if out_mono:
-                subprocess.run(['pw-link', out_mono, JAMULUS_IN_L], capture_output=True, text=True, env=_pw_env())
-                subprocess.run(['pw-link', out_mono, JAMULUS_IN_R], capture_output=True, text=True, env=_pw_env())
+            if _link_pipewire_outputs(out_l, out_r, out_mono):
                 return
             time.sleep(0.1)
         with state['lock']:
@@ -541,14 +609,7 @@ def stop_metronome():
 
     # Unlink any existing metro links (ignore errors).
     try:
-        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_FL', JAMULUS_IN_L],
-                       capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_FR', JAMULUS_IN_R],
-                       capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_MONO', JAMULUS_IN_L],
-                       capture_output=True, text=True, env=_pw_env())
-        subprocess.run(['pw-link', '-d', f'{METRO_NAME}:output_MONO', JAMULUS_IN_R],
-                       capture_output=True, text=True, env=_pw_env())
+        _disconnect_pipewire_outputs(METRO_NAME)
     except Exception:
         pass
 
