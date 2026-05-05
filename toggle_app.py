@@ -103,6 +103,8 @@ LIBRARY_S3_BUCKET = os.getenv('LIBRARY_S3_BUCKET', 'pipedreamers-recordings-prod
 LIBRARY_VPS_ID    = os.getenv('LIBRARY_VPS_ID', 'vps-0001')
 LIBRARY_AWS_CLI   = os.getenv('LIBRARY_AWS_CLI', '/home/nds/.local/bin/aws')
 LIBRARY_AWS_REGION = os.getenv('LIBRARY_AWS_REGION', 'us-east-1')
+UPLOAD_SAVED_ROOT = 'saved'
+UPLOAD_FOLDER_MARKER = '.keep'
 # Keys live under: vps/<vps-id>/recordings/ and vps/<vps-id>/tracks/
 
 # ---------- TRACKBOT (Injector WAV Playback) ----------
@@ -395,6 +397,31 @@ def _safe_library_file_path(path_value: str) -> tuple[str, str] | tuple[None, No
     return area, rel
 
 
+def _sanitize_folder_name(raw_name: str) -> str:
+    name = re.sub(r'\s+', ' ', str(raw_name or '').strip())
+    name = name.replace('/', ' ').replace('\\', ' ')
+    name = re.sub(r'[^A-Za-z0-9 _\-().&]', '', name)
+    name = re.sub(r'\s+', ' ', name).strip(' .')
+    if len(name) > 80:
+        name = name[:80].rstrip(' .')
+    return name
+
+
+def _saved_folder_key(tenant: str, folder_name: str) -> str:
+    safe_folder = _sanitize_folder_name(folder_name)
+    return f"vps/{LIBRARY_VPS_ID}/recordings/{tenant}/{UPLOAD_SAVED_ROOT}/{safe_folder}/{UPLOAD_FOLDER_MARKER}"
+
+
+def _ensure_saved_folder(tenant: str, folder_name: str) -> str:
+    safe_folder = _sanitize_folder_name(folder_name)
+    if not safe_folder:
+        raise ValueError('folder name is required')
+    key = _saved_folder_key(tenant, safe_folder)
+    s3 = boto3.client('s3', region_name=LIBRARY_AWS_REGION)
+    s3.put_object(Bucket=LIBRARY_S3_BUCKET, Key=key, Body=b'')
+    return safe_folder
+
+
 def _zip_filename_for_subpath(subpath: str, fallback: str = 'session') -> str:
     bits = [b for b in (subpath or '').split('/') if b]
     base = bits[-1] if bits else fallback
@@ -458,6 +485,8 @@ def _s3_list(prefix: str) -> dict:
     for obj in (data.get("Contents") or []):
         key = obj.get("Key")
         if (not key) or key.endswith("/") or key == prefix:
+            continue
+        if key.split('/')[-1] == UPLOAD_FOLDER_MARKER:
             continue
         files.append({
             "key": key,
@@ -946,7 +975,7 @@ def _support_first_recording_dt() -> datetime | None:
                 if not key or key.endswith('/'):
                     continue
                 rel = key[len(prefix):] if key.startswith(prefix) else key
-                if rel.startswith('temp/') or rel.startswith('.archived/'):
+                if rel.startswith('temp/') or rel.startswith(f'{UPLOAD_SAVED_ROOT}/') or rel.startswith('.archived/'):
                     continue
                 lm = obj.get('LastModified')
                 if lm and (earliest is None or lm < earliest):
@@ -958,7 +987,7 @@ def _support_first_recording_dt() -> datetime | None:
     if earliest is None:
         try:
             for root, dirs, files in os.walk(RECORDINGS_DIR):
-                dirs[:] = [d for d in dirs if d not in ('temp', '.archived')]
+                dirs[:] = [d for d in dirs if d not in ('temp', UPLOAD_SAVED_ROOT, '.archived')]
                 for fn in files:
                     p = os.path.join(root, fn)
                     try:
@@ -1394,14 +1423,14 @@ def wav_browse():
         dirs = list(result.get('dirs', []))
         files = result.get('files', [])
 
-        # On tenant hosts, expose a stable shared library root and the tenant temp
-        # folder alongside the tenant-scoped recordings tree, even if temp is empty.
+        # On tenant hosts, expose a stable shared library root and the tenant Saved
+        # folder alongside the tenant-scoped recordings tree, even if Saved is empty.
         if area == 'recordings' and (sub or '') == ((_tenant_slug_from_request() or '') + '/'):
             if 'library' not in dirs:
                 dirs.insert(0, 'library')
-            if 'temp' not in dirs:
+            if UPLOAD_SAVED_ROOT not in dirs:
                 insert_at = 1 if dirs and dirs[0] == 'library' else 0
-                dirs.insert(insert_at, 'temp')
+                dirs.insert(insert_at, UPLOAD_SAVED_ROOT)
 
         return jsonify({
             "ok": True,
@@ -1666,6 +1695,7 @@ def wav_download_folder():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/wav/upload", methods=["POST"])
 @app.route("/wav/tmp-upload", methods=["POST"])
 def wav_tmp_upload():
     ok, resp = _require_passcode()
@@ -1675,6 +1705,10 @@ def wav_tmp_upload():
     f = request.files["file"]
     if f.filename == "":
         return jsonify({"ok": False, "error": "Empty filename"}), 400
+    upload_tenant = _tenant_slug_from_request() or "shared"
+    folder_name = _sanitize_folder_name(request.form.get('folder') or '')
+    if not folder_name:
+        return jsonify({"ok": False, "error": "Folder name is required"}), 400
     # Save to temp location
     tmp_dir = "/tmp/jamulus_uploads"
     os.makedirs(tmp_dir, exist_ok=True)
@@ -1682,16 +1716,41 @@ def wav_tmp_upload():
     filename = f"{uuid.uuid4().hex}_{f.filename.replace(' ', '_').replace('/', '_')}"
     filepath = os.path.join(tmp_dir, filename)
     f.save(filepath)
-    # Upload to S3 in recordings/temp/
-    upload_tenant = _tenant_slug_from_request() or "shared"
-    key = f"vps/{LIBRARY_VPS_ID}/recordings/{upload_tenant}/temp/{filename}"
+    # Upload to S3 in recordings/<tenant>/saved/<folder>/
     try:
+        safe_folder = _ensure_saved_folder(upload_tenant, folder_name)
         s3 = boto3.client("s3", region_name=LIBRARY_AWS_REGION)
+        key = f"vps/{LIBRARY_VPS_ID}/recordings/{upload_tenant}/{UPLOAD_SAVED_ROOT}/{safe_folder}/{filename}"
         s3.upload_file(filepath, LIBRARY_S3_BUCKET, key)
         os.remove(filepath)
-        return jsonify({"ok": True, "file": f"recordings/{upload_tenant}/temp/{filename}"})
+        return jsonify({
+            "ok": True,
+            "file": f"recordings/{upload_tenant}/{UPLOAD_SAVED_ROOT}/{safe_folder}/{filename}",
+            "folder": safe_folder,
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/wav/create-folder', methods=['POST'])
+def wav_create_folder():
+    ok, resp = _require_passcode()
+    if not ok:
+        return resp
+    tenant = _tenant_slug_from_request() or 'shared'
+    data = request.get_json(silent=True) or {}
+    folder_name = data.get('name') or data.get('folder') or ''
+    try:
+        safe_folder = _ensure_saved_folder(tenant, folder_name)
+        return jsonify({
+            'ok': True,
+            'folder': safe_folder,
+            'path': f'recordings/{tenant}/{UPLOAD_SAVED_ROOT}/{safe_folder}/',
+        })
+    except ValueError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 # ---------- Library (S3) API ----------
 

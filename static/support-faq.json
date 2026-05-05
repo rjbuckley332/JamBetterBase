@@ -107,9 +107,9 @@
           "tags": ["download", "phone", "iphone", "android", "save", "share"]
         },
         {
-          "q": "What's the temp folder for?",
-          "a": "The **temp** folder is where your uploaded backing tracks go. When you upload an audio file using the Upload button, it appears here. You can then select it as your backing track for recording sessions.",
-          "tags": ["temp", "folder", "upload", "temporary"]
+          "q": "What's the Saved folder for?",
+          "a": "The **Saved** folder is where your uploaded backing tracks live. When you upload an audio file, the app asks which folder inside **Saved** you want to use. If the folder doesn't exist yet, you can create and name it right there.",
+          "tags": ["saved", "folder", "upload", "backing tracks", "temp"]
         },
         {
           "q": "I can't hear anyone / no one can hear me.",

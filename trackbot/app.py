@@ -114,7 +114,7 @@ def start_playback(relpath, channel='stereo'):
         channel = 'stereo'
 
     # --- Path resolution ---
-    # relpath from toggle_app uses browse paths like "recordings/temp/foo.mp3"
+    # relpath from toggle_app uses browse paths like "recordings/saved/Folder/foo.mp3"
     # or "recordings/<tenant>/2026-03-27/bar.wav".
     # RCLONE_REMOTE may be tenant-scoped (e.g. .../recordings/seigr).
     stripped = relpath.lstrip("/")

@@ -63,7 +63,7 @@ aws s3 ls s3://pipedreamers-recordings-prod/vps/vps-0001/recordings/
 
 ## Web UI Tabs (as of 2026-02-17)
 - Control: Start/stop recording, metronome, saved sessions
-- Backing Track: Browse S3, select backing tracks, temp upload
+- Backing Track: Browse S3, select backing tracks, upload into Saved folders
 
 ## S3 Structure
 ```
@@ -74,7 +74,7 @@ s3://pipedreamers-recordings-prod/vps/vps-0001/
 │           ├── XXXXXX_YYMMDD_PART.wav
 │           └── XXXXXX_YYMMDD_MIXL.mp3
 └── tracks/
-    └── tmp/  (24h temp uploads)
+    └── saved/  (uploaded backing tracks organized by folder)
 ```
 
 ## Dependencies

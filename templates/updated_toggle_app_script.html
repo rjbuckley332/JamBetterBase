@@ -367,8 +367,9 @@
                                 Choose File
                                 <input type="file" id="tmpTrackUploadInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.mp4,.m4v" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
                             </label>
-                            <span class="help-tooltip" title="Upload your own backing track here. It will appear in your temp folder.">❓</span>
-                            <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Temp Upload (24h)</button>
+                            <span class="help-tooltip" title="Upload your own backing track here. You will choose a folder inside Saved.">❓</span>
+                            <button type="button" class="btn btn-sm btn-info" onclick="createSavedFolderPrompt()">New Folder</button>
+                            <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Upload to Saved</button>
                         </div>
                     </div>
                 </div>
@@ -648,6 +649,7 @@
         let playbackRunning = false;
         let wavCurrentPath = "recordings/";
         const seenDirsByPath = {};
+        const SAVED_ROOT = 'saved';
 
         function showToast(html, ms=7000) {
             const stack = document.getElementById('toastStack');
@@ -911,10 +913,63 @@
         }
 
         function prettyUploadName(name) {
-            // Temp uploads are stored as: <uuid>_<original>
+            // Uploaded tracks are stored as: <uuid>_<original>
             // Hide the uuid prefix for readability.
             if (!name) return name;
             return name.replace(/^[0-9a-f]{32}_/i, '');
+        }
+
+        function uiFolderLabel(name) {
+            return String(name || '').toLowerCase() === SAVED_ROOT ? 'Saved' : String(name || '');
+        }
+
+        function uiPathLabel(path) {
+            return String(path || '').replace(/(^|\/)saved(?=\/|$)/g, '$1Saved');
+        }
+
+        function currentSavedFolderName() {
+            const parts = String(wavCurrentPath || '').split('/').filter(Boolean);
+            const idx = parts.findIndex(p => p.toLowerCase() === SAVED_ROOT);
+            if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
+            return '';
+        }
+
+        async function fetchSavedFolders() {
+            const res = await apiFetch('/wav/browse?path=' + encodeURIComponent('/recordings/' + SAVED_ROOT + '/'));
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || 'Could not load Saved folders');
+            return (data.dirs || []).filter(Boolean);
+        }
+
+        async function createSavedFolder(name) {
+            const trimmed = String(name || '').trim();
+            if (!trimmed) throw new Error('Folder name is required.');
+            const res = await apiFetch('/wav/create-folder', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: trimmed})
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || 'Folder create failed');
+            showToast('📁 Created Saved/' + data.folder);
+            return data.folder;
+        }
+
+        async function createSavedFolderPrompt(prefill='') {
+            const current = prefill || currentSavedFolderName() || '';
+            const name = window.prompt('Name the folder inside Saved:', current);
+            if (name === null) return null;
+            const trimmed = String(name || '').trim();
+            if (!trimmed) {
+                alert('Folder name is required.');
+                return null;
+            }
+            try {
+                return await createSavedFolder(trimmed);
+            } catch (e) {
+                alert('Folder create failed: ' + e);
+                return null;
+            }
         }
 
 
@@ -958,7 +1013,7 @@
                     const added = dirsNow.filter(d => !prevSet.has(d));
                     for (const d of added) {
                         const targetPath = pathKey + d + '/';
-                        const openJs = `wavCurrentPath='${targetPath}';document.getElementById('wavPath').textContent='/' + wavCurrentPath;wavRefresh();`;
+                        const openJs = `wavCurrentPath='${targetPath}';document.getElementById('wavPath').textContent='/' + uiPathLabel(wavCurrentPath);wavRefresh();`;
                         showToast(`✅ New session ready: <b>${d}</b><br><a href="#" onclick="${openJs};return false;">Open folder</a> · <a href="/wav/download-folder?path=${encodeURIComponent('/'+targetPath)}" target="_blank" rel="noopener">Download ZIP</a>`);
                         try { if (navigator.vibrate) navigator.vibrate(70); } catch(e) {}
                     }
@@ -966,17 +1021,17 @@
                 seenDirsByPath[pathKey] = dirsNow;
 
                 
-                // Folders: hide trash/archive noise. temp is per-tenant, shows naturally.
+                // Folders: hide trash/archive noise. Saved is per-tenant and injected by the backend.
                 const hiddenDirs = new Set(['tmp', 'trash', '.trash', '.archived']);
                 let visibleDirs = (data.dirs || []).filter(d => !hiddenDirs.has(String(d || '').toLowerCase()));
                 visibleDirs.forEach(d => {
                     const btn = document.createElement('div');
                     btn.className = 'file-row';
-                    btn.innerHTML = '<span>📁 ' + d + '/</span>';
+                    btn.innerHTML = '<span>📁 ' + uiFolderLabel(d) + '/</span>';
                     btn.style.cursor = 'pointer';
                     btn.onclick = () => {
                         wavCurrentPath = wavCurrentPath + d + '/';
-                        document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
+                        document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
                         wavRefresh();
                     };
                     filesDiv.appendChild(btn);
@@ -993,7 +1048,7 @@
                         sizeStr = mb < 1 ? (f.size / 1024).toFixed(1) + ' KB' : mb.toFixed(1) + ' MB';
                     }
                     
-                    const displayName = (wavCurrentPath.includes('/temp/')) ? prettyUploadName(f.name) : f.name;
+                    const displayName = (wavCurrentPath.includes('/saved/')) ? prettyUploadName(f.name) : f.name;
                     row.innerHTML = '<span>' + getFileIcon(f.name) + ' ' + displayName + (sizeStr ? ' <small style="opacity:0.7">(' + sizeStr + ')</small>' : '') + '</span>';
                     
                     const actions = document.createElement('div');
@@ -1112,7 +1167,7 @@
                 wavCurrentPath = parts.length === 0 ? 'recordings/' : parts.join('/') + '/';
                 if (!wavCurrentPath.startsWith('recordings/')) wavCurrentPath = 'recordings/';
             }
-            document.getElementById('wavPath').textContent = '/' + wavCurrentPath;
+            document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
             wavRefresh();
         }
 
@@ -1123,13 +1178,39 @@
                 return;
             }
             const file = input.files[0];
-            const form = new FormData();
-            form.append('file', file);
             try {
-                const res = await fetch('/wav/tmp-upload', { method: 'POST', body: form });
+                const existingFolders = await fetchSavedFolders();
+                let defaultFolder = currentSavedFolderName();
+                if (!defaultFolder && existingFolders.length === 1) defaultFolder = existingFolders[0];
+                const promptLines = [
+                    'Choose a folder inside Saved for this upload.',
+                    existingFolders.length ? ('Existing folders: ' + existingFolders.join(', ')) : 'No folders yet. Enter a new folder name.',
+                    '',
+                    'Folder name:'
+                ];
+                let folder = window.prompt(promptLines.join('\n'), defaultFolder || '');
+                if (folder === null) return;
+                folder = String(folder || '').trim();
+                if (!folder) {
+                    alert('Folder name is required.');
+                    return;
+                }
+                if (!existingFolders.includes(folder)) {
+                    if (!confirm('Create new Saved folder "' + folder + '"?')) return;
+                    folder = await createSavedFolder(folder);
+                    if (!folder) return;
+                }
+                const form = new FormData();
+                form.append('file', file);
+                form.append('folder', folder);
+                const res = await fetch('/wav/upload', { method: 'POST', body: form });
                 const data = await res.json();
                 if (data.ok) {
-                    alert('Uploaded: ' + data.file);
+                    wavCurrentPath = 'recordings/' + SAVED_ROOT + '/' + data.folder + '/';
+                    document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
+                    alert('Uploaded to Saved/' + data.folder + ': ' + prettyUploadName(file.name));
+                    input.value = '';
+                    document.getElementById('uploadFileName').textContent = 'No file selected';
                     wavRefresh();
                 } else {
                     alert('Upload failed: ' + (data.error || 'Unknown error'));
@@ -1200,6 +1281,7 @@
                 inc.checked = localStorage.getItem('includeInjector') === '1';
                 inc.addEventListener('change', () => localStorage.setItem('includeInjector', inc.checked ? '1' : '0'));
             }
+            document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
             wavRefresh();
             refreshQueuedWav();
             refreshStatuses();
