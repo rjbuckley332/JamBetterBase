@@ -54,6 +54,8 @@ LOCK_FILE       = "/tmp/jamulus_locked.flag"
 SESSION_STATUS  = "/tmp/jamulus_session_active.flag"  # legacy UI flag (not authoritative)
 INCLUDE_INJECTOR_FLAG = "/tmp/jamulus_include_injector.flag"
 INCLUDE_INJECTOR_MAP_CSV = "/tmp/jamulus_include_injector_map.csv"
+METRONOME_TAINT_MAP_CSV = "/tmp/jamulus_metronome_taint_map.csv"
+ACTIVE_RECORDING_KEY_FILE = "/tmp/jamulus_active_recording_key.txt"
 
 # Jamulus recordings parent dir
 RECORDINGS_DIR  = "/var/lib/jamulus/recordings"
@@ -712,6 +714,24 @@ def _jamulus_toggle_recording(pid: int):
     return subprocess.run(["sudo", "-n", "kill", "-SIGUSR2", str(pid)], capture_output=True, text=True)
 
 
+def _mark_recording_key_metronome_tainted(key: str | None):
+    key = (key or '').strip()
+    if not key:
+        return
+    try:
+        with open(METRONOME_TAINT_MAP_CSV, 'a', newline='') as f:
+            f.write(f"{key},1\n")
+    except Exception:
+        pass
+
+
+def _active_recording_key() -> str:
+    try:
+        return Path(ACTIVE_RECORDING_KEY_FILE).read_text().strip()
+    except Exception:
+        return ''
+
+
 # ---------- RECORDING TOGGLE ------------
 @app.route("/toggle-recording", methods=["POST"])
 def toggle_recording():
@@ -722,6 +742,7 @@ def toggle_recording():
     action = (data.get("action") or "").strip().lower()
     include_injector = bool(data.get("include_injector", False))
     ctx = _jamulus_context()
+    recording_key = _recording_map_key_now()
 
     # Persist user preference for uploader behavior
     try:
@@ -730,7 +751,7 @@ def toggle_recording():
         pass
     try:
         with open(INCLUDE_INJECTOR_MAP_CSV, "a", newline="") as f:
-            f.write(f"{_recording_map_key_now()},{1 if include_injector else 0}\n")
+            f.write(f"{recording_key},{1 if include_injector else 0}\n")
     except Exception:
         pass
 
@@ -793,13 +814,30 @@ def toggle_recording():
             save_session_name(name)
             log_session_name(name)
             with open(RECORDING_MAP_CSV, "a") as f:
-                f.write(f"{_recording_map_key_now()},{name}\n")
+                f.write(f"{recording_key},{name}\n")
         Path(RECORDING_FLAG).write_text("ON")
         Path(SESSION_STATUS).write_text("ACTIVE")
+        try:
+            Path(ACTIVE_RECORDING_KEY_FILE).write_text(recording_key)
+        except Exception:
+            pass
+        try:
+            tenant = ctx.get('tenant')
+            tb = _trackbot_url(tenant)
+            code, body = _http_get(f"{tb}/api/metronome/status", timeout=2.0)
+            data = json.loads(body) if body else {}
+            if code and 200 <= code < 300 and data.get('running'):
+                _mark_recording_key_metronome_tainted(recording_key)
+        except Exception:
+            pass
     else:  # stop
         for path in (RECORDING_FLAG, SESSION_STATUS):
             if os.path.exists(path):
                 os.remove(path)
+        try:
+            Path(ACTIVE_RECORDING_KEY_FILE).unlink(missing_ok=True)
+        except Exception:
+            pass
     return "OK"
 
 # ---------- STATUS ENDPOINTS ------------
@@ -837,6 +875,15 @@ def metronome_start():
     tb = _trackbot_url(tenant)
     url = f"{tb}/api/metronome/start?bpm={bpm}&vol={vol}&sig={urllib.parse.quote(sig, safe='')}"
     code, body = _http_get(url, timeout=5.0)
+    try:
+        ctx = _jamulus_context()
+        is_recording = jamulus_recording_enabled(ctx)
+        if is_recording is None:
+            is_recording = _has_recent_recording_writes(ctx=ctx)
+        if is_recording:
+            _mark_recording_key_metronome_tainted(_active_recording_key())
+    except Exception:
+        pass
     try:
         data = json.loads(body) if body else {"ok": False}
     except Exception:

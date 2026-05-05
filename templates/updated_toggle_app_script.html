@@ -291,7 +291,7 @@
                 <input type="text" id="sessionNameInput" placeholder="Enter name before recording" style="flex:1;min-width:200px;">
                 <label style="display:flex;align-items:center;gap:6px;">
                     <input type="checkbox" id="includeInjector"> Include Injector-bot track
-                    <span class="help-tooltip" title="When enabled, Injector-bot WAV is included in uploaded session files.">❓</span>
+                    <span class="help-tooltip" title="When enabled, Injector-bot WAV is included in uploaded session files. If metronome was used during the take, the Injector-bot WAV is automatically skipped so clicks never end up in deliverables.">❓</span>
                 </label>
                 <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
                 <span class="help-tooltip" title="If a backing track is selected, it will automatically play when you start recording">❓</span>

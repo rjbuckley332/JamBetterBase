@@ -43,6 +43,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
+INCLUDE_INJECTOR_FLAG = '/tmp/jamulus_include_injector.flag'
+INCLUDE_INJECTOR_MAP_FILE = '/tmp/jamulus_include_injector_map.csv'
+METRONOME_TAINT_MAP_FILE = '/tmp/jamulus_metronome_taint_map.csv'
+
+
 def _env(name: str, default: str) -> str:
     v = os.getenv(name)
     return v.strip() if isinstance(v, str) and v.strip() else default
@@ -151,6 +156,45 @@ def lookup_session_name(map_file: str, key: str) -> tuple[str | None, str | None
     return (None, None)
 
 
+def lookup_bool_map(map_file: str, key: str) -> bool | None:
+    """Resolve a boolean setting from a jam_key-indexed CSV map.
+
+    Accepts exact keys and the same ±4h/±5h tolerance used elsewhere.
+    """
+    if not map_file or not key:
+        return None
+    try:
+        if not os.path.exists(map_file):
+            return None
+        with open(map_file, newline='', encoding='utf-8') as f:
+            rows = list(csv.reader(f))
+
+        def _row_bool(row_key: str) -> bool | None:
+            for row in reversed(rows):
+                if not row or len(row) < 2:
+                    continue
+                if (row[0] or '').strip() != row_key:
+                    continue
+                v = (row[1] or '').strip().lower()
+                return v in ('1', 'true', 'yes', 'on')
+            return None
+
+        hit = _row_bool(key)
+        if hit is not None:
+            return hit
+
+        t = _parse_map_key_ts(key)
+        if t is not None:
+            for h in (4, 5, -4, -5):
+                kk = (t + timedelta(hours=h)).strftime('%Y%m%d_%H%M%S')
+                hit = _row_bool(kk)
+                if hit is not None:
+                    return hit
+    except Exception:
+        return None
+    return None
+
+
 def consume_name(map_file: str, key: str):
     """Remove the first matching key row (queue behavior) after successful upload."""
     try:
@@ -177,33 +221,7 @@ def consume_name(map_file: str, key: str):
 
 def lookup_include_injector(map_file: str, key: str) -> bool | None:
     """Resolve include_injector for a jam key from csv: key,0|1 (latest wins)."""
-    if not map_file or not key or not os.path.exists(map_file):
-        return None
-    try:
-        with open(map_file, newline='', encoding='utf-8') as f:
-            rows = list(csv.reader(f))
-        # latest exact match wins
-        for row in reversed(rows):
-            if not row or len(row) < 2:
-                continue
-            k = (row[0] or '').strip()
-            v = (row[1] or '').strip().lower()
-            if k == key:
-                return v in ('1','true','yes','on')
-        # tolerate timezone drift ±4/±5h
-        t = _parse_map_key_ts(key)
-        if t is not None:
-            for h in (4,5,-4,-5):
-                kk = (t + timedelta(hours=h)).strftime('%Y%m%d_%H%M%S')
-                for row in reversed(rows):
-                    if not row or len(row) < 2:
-                        continue
-                    if (row[0] or '').strip() == kk:
-                        v = (row[1] or '').strip().lower()
-                        return v in ('1','true','yes','on')
-    except Exception:
-        return None
-    return None
+    return lookup_bool_map(map_file, key)
 
 def include_injector_enabled() -> bool:
     try:
@@ -456,6 +474,10 @@ def main():
                 include_injector = lookup_include_injector(INCLUDE_INJECTOR_MAP_FILE, key)
                 if include_injector is None:
                     include_injector = include_injector_enabled()
+                metronome_tainted = lookup_bool_map(METRONOME_TAINT_MAP_FILE, key)
+                if metronome_tainted:
+                    include_injector = False
+                    print(f"[uploader] metronome used in {d.name}; suppressing Injector-bot WAV upload")
                 # Upload singer wavs (friendly names; injector optional)
                 wav_name_map: dict[str, str] = {}
                 for w in sorted(wavs):
