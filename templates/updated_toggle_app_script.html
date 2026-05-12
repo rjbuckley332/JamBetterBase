@@ -357,6 +357,7 @@
                     <div><b>Browse:</b> <code id="wavPath">recordings/</code></div>
                     <div class="nav-left">
                         <button class="btn btn-sm" onclick="wavUp()">Up</button>
+                        <button class="btn btn-sm" onclick="wavHome()">Home</button>
                         <button class="btn btn-sm" onclick="wavRefresh()">Refresh</button>
                         <button id="downloadFolderBtn" class="btn btn-sm btn-info" onclick="downloadCurrentFolder()">Download Folder ZIP</button>
                     </div>
@@ -1167,6 +1168,12 @@
                 wavCurrentPath = parts.length === 0 ? 'recordings/' : parts.join('/') + '/';
                 if (!wavCurrentPath.startsWith('recordings/')) wavCurrentPath = 'recordings/';
             }
+            document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
+            wavRefresh();
+        }
+
+        function wavHome() {
+            wavCurrentPath = 'recordings/';
             document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
             wavRefresh();
         }
