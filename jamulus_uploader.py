@@ -231,7 +231,7 @@ def include_injector_enabled() -> bool:
         return False
 
 def wav_should_exclude(basename: str, include_injector: bool = False) -> bool:
-    """Exclude injector bot and any obvious non-singer tracks."""
+    """Exclude jukebox/injector bot and any obvious non-singer tracks."""
     b = (basename or '').lower()
     if b.startswith('no_name-') and '127_0_0_1' in b:
         return True
@@ -239,6 +239,8 @@ def wav_should_exclude(basename: str, include_injector: bool = False) -> bool:
         if 'injector-bot' in b or 'injector_bot' in b or 'injectorbot' in b:
             return True
         if 'injector' in b and b.endswith('.wav'):
+            return True
+        if 'jukebox' in b and b.endswith('.wav'):
             return True
     return False
 
@@ -261,13 +263,14 @@ def _pan_params_for_track(name: str) -> str:
 
 
 def create_leveled_mix_mp3(session_folder: Path, output_base: str,
+                           include_injector: bool = False,
                            target_i: int = -20, true_peak: int = -2, lra: int = 7) -> Path | None:
     """Create a loudness-leveled, panned stereo mix MP3 from singer WAVs."""
     wavs: list[Path] = []
     for p in sorted(session_folder.glob('*.wav')):
         if p.stat().st_size < 10240:
             continue
-        if wav_should_exclude(p.name, include_injector=False):
+        if wav_should_exclude(p.name, include_injector=include_injector):
             continue
         wavs.append(p)
 
@@ -459,9 +462,18 @@ def main():
 
                 fold6 = _pad_upper_alnum(sess, 6)
 
-                # Build leveled mix MP3 locally before uploading (singer-only; excludes injector-bot)
+                include_injector = lookup_include_injector(INCLUDE_INJECTOR_MAP_FILE, key)
+                if include_injector is None:
+                    include_injector = include_injector_enabled()
+                metronome_tainted = lookup_bool_map(METRONOME_TAINT_MAP_FILE, key)
+                if metronome_tainted:
+                    include_injector = False
+                    print(f"[uploader] metronome used in {d.name}; suppressing Jukebox/Injector-bot audio from uploads")
+
+                # Build leveled mix MP3 locally before uploading. The Jukebox/Injector track
+                # is included only when the website checkbox was checked for this take.
                 try:
-                    create_leveled_mix_mp3(d, output_base=sess)
+                    create_leveled_mix_mp3(d, output_base=sess, include_injector=include_injector)
                 except Exception as e:
                     print(f"[mix] ERROR for {d.name}: {e}")
 
@@ -471,14 +483,7 @@ def main():
 
                 ok_all = True
 
-                include_injector = lookup_include_injector(INCLUDE_INJECTOR_MAP_FILE, key)
-                if include_injector is None:
-                    include_injector = include_injector_enabled()
-                metronome_tainted = lookup_bool_map(METRONOME_TAINT_MAP_FILE, key)
-                if metronome_tainted:
-                    include_injector = False
-                    print(f"[uploader] metronome used in {d.name}; suppressing Injector-bot WAV upload")
-                # Upload singer wavs (friendly names; injector optional)
+                # Upload singer wavs (friendly names; jukebox/injector optional)
                 wav_name_map: dict[str, str] = {}
                 for w in sorted(wavs):
                     if wav_should_exclude(w.name, include_injector=include_injector):
