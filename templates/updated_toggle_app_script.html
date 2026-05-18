@@ -294,7 +294,7 @@
                     <span class="help-tooltip" title="When enabled, the JukeBox WAV is included in uploaded session files. If metronome was used during the take, the JukeBox WAV is automatically skipped so clicks never end up in deliverables.">❓</span>
                 </label>
                 <button id="recordToggleBtn" class="btn btn-success" onclick="toggleRecording()">Start Recording</button>
-                <span class="help-tooltip" title="If a backing track is selected, it will automatically play when you start recording">❓</span>
+                <span class="help-tooltip" title="If a learning track is selected, it will automatically play when you start recording">❓</span>
                 <button class="btn btn-warning" onclick="restartBotJamulus()">Restart Jukebox</button>
             </div>
             <div class="status-row">
@@ -331,9 +331,9 @@
             </div>
         </div>
 
-        <!-- BACKING TRACK -->
+        <!-- LEARNING TRACK -->
         <div class="section">
-            <h3>🎵 Backing Track</h3>
+            <h3>🎵 Learning Track</h3>
             <div class="input-group">
                 <label><b>Selected:</b></label>
                 <code id="queuedWavDisplay" style="flex:1;">(none)</code>
@@ -368,7 +368,7 @@
                                 Choose File
                                 <input type="file" id="tmpTrackUploadInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.mp4,.m4v" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
                             </label>
-                            <span class="help-tooltip" title="Upload your own backing track here. You will choose a folder inside Saved.">❓</span>
+                            <span class="help-tooltip" title="Upload your own learning track here. You will choose a folder inside Saved.">❓</span>
                             <button type="button" class="btn btn-sm btn-info" onclick="createSavedFolderPrompt()">New Folder</button>
                             <button class="btn btn-sm btn-success" onclick="tmpTrackUpload()">Upload to Saved</button>
                         </div>

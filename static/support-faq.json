@@ -78,7 +78,7 @@
       "questions": [
         {
           "q": "How do I start a recording session?",
-          "a": "1. Type a **session name** in the text box (e.g., your song name or rehearsal date)\n2. Click **Start Recording**\n3. Everyone's audio is now being recorded as separate tracks\n4. When done, click **Stop Recording**\n\nIf you have a backing track selected, it will automatically start playing when you hit record.",
+          "a": "1. Type a **session name** in the text box (e.g., your song name or rehearsal date)\n2. Click **Start Recording**\n3. Everyone's audio is now being recorded as separate tracks\n4. When done, click **Stop Recording**\n\nIf you have a learning track selected, it will automatically start playing when you hit record.",
           "tags": ["record", "start", "session", "how to record"]
         },
         {
@@ -87,9 +87,9 @@
           "tags": ["find", "recordings", "where", "browse", "files", "download"]
         },
         {
-          "q": "How do I play a backing track?",
-          "a": "1. Go to the **Backing Track** section\n2. Browse the available tracks in the file list\n3. Select the track you want\n4. Click **Play** (or just start recording — it plays automatically)\n\nTo upload your own backing track, use the **Upload** button. It will appear in the **temp** folder.",
-          "tags": ["backing track", "play", "music", "accompaniment", "track"]
+          "q": "How do I play a learning track?",
+          "a": "1. Go to the **Learning Track** section\n2. Browse the available tracks in the file list\n3. Select the track you want\n4. Click **Play** (or just start recording — it plays automatically)\n\nTo upload your own learning track, use the **Upload** button. It will appear in the **temp** folder.",
+          "tags": ["learning track", "play", "music", "accompaniment", "track"]
         },
         {
           "q": "How do I use the metronome?",
@@ -98,8 +98,8 @@
         },
         {
           "q": "What does 'Restart Jukebox' do?",
-          "a": "It restarts the backing track player. Use this if:\n• A backing track stops playing unexpectedly\n• You want to restart the track from the beginning\n• Audio from the Jukebox sounds garbled\n\nIt does NOT affect the Jamulus server or other musicians' connections — only the backing track system.",
-          "tags": ["restart", "jukebox", "bot", "backing track restart"]
+          "a": "It restarts the learning track player. Use this if:\n• A learning track stops playing unexpectedly\n• You want to restart the track from the beginning\n• Audio from the Jukebox sounds garbled\n\nIt does NOT affect the Jamulus server or other musicians' connections — only the learning track system.",
+          "tags": ["restart", "jukebox", "bot", "learning track restart"]
         },
         {
           "q": "How do I download recordings to my phone?",
@@ -108,8 +108,8 @@
         },
         {
           "q": "What's the Saved folder for?",
-          "a": "The **Saved** folder is where your uploaded backing tracks live. When you upload an audio file, the app asks which folder inside **Saved** you want to use. If the folder doesn't exist yet, you can create and name it right there.",
-          "tags": ["saved", "folder", "upload", "backing tracks", "temp"]
+          "a": "The **Saved** folder is where your uploaded learning tracks live. When you upload an audio file, the app asks which folder inside **Saved** you want to use. If the folder doesn't exist yet, you can create and name it right there.",
+          "tags": ["saved", "folder", "upload", "learning tracks", "temp"]
         },
         {
           "q": "I can't hear anyone / no one can hear me.",
