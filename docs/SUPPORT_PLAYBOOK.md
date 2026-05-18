@@ -65,7 +65,7 @@ Escalate if multiple users impacted in same time window.
 
 ### 3) Clicking/crackling audio
 Checks:
-1. Is backing track active?
+1. Is learning track active?
 2. CPU/load spikes?
 3. JACK period currently set.
 

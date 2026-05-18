@@ -13,7 +13,7 @@ All services are enabled and start on boot:
 1. jamulus-headless.service - Main Jamulus server
    - Records to: /var/lib/jamulus/recordings/
    
-2. jamulus-injector.service - TrackBot backing track injector
+2. jamulus-injector.service - TrackBot learning track injector
    - Connects to: 127.0.0.1:22100 (JSON-RPC)
    - Web UI: http://127.0.0.1:8088
    
@@ -63,7 +63,7 @@ aws s3 ls s3://pipedreamers-recordings-prod/vps/vps-0001/recordings/
 
 ## Web UI Tabs (as of 2026-02-17)
 - Control: Start/stop recording, metronome, saved sessions
-- Backing Track: Browse S3, select backing tracks, upload into Saved folders
+- Learning Track: Browse S3, select learning tracks, upload into Saved folders
 
 ## S3 Structure
 ```
@@ -74,7 +74,7 @@ s3://pipedreamers-recordings-prod/vps/vps-0001/
 │           ├── XXXXXX_YYMMDD_PART.wav
 │           └── XXXXXX_YYMMDD_MIXL.mp3
 └── tracks/
-    └── saved/  (uploaded backing tracks organized by folder)
+    └── saved/  (uploaded learning tracks organized by folder)
 ```
 
 ## Dependencies

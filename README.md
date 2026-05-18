@@ -7,10 +7,10 @@ This repository contains the configuration and applications for the PipeDreamers
 This server provides:
 - **Jamulus audio server** for real-time jam sessions
 - **Web control interface** (toggle_app.py) for managing the server
-- **Track playback system** (trackbot) for playing backing tracks
+- **Track playback system** (trackbot) for playing learning tracks
 - **Audio injection system** for injecting audio into Jamulus
 - **Listener bot** for monitoring and recording sessions
-- **File upload/management** for backing tracks and recordings
+- **File upload/management** for learning tracks and recordings
 
 ## Architecture
 
@@ -20,7 +20,7 @@ This server provides:
 |-----------|------|---------|
 | Web Control | `toggle_app.py` | Main Flask web app for server control |
 | Unified Ops Dashboard | `ops_dashboard_app.py` | Fleet status + start/stop controls + operator pins |
-| Track Player | `trackbot/app.py` | Playback system for backing tracks |
+| Track Player | `trackbot/app.py` | Playback system for learning tracks |
 | UI Template | `templates/updated_toggle_app_script.html` | Web interface |
 | Practice App | `pitch-monitor/` | Customer-facing pitch/practice web assets |
 | Uploader | `jamulus_uploader.py` | S3 upload functionality |

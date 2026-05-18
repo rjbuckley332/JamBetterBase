@@ -83,7 +83,7 @@ HOURS_BLOCK     = 10
 # --------------------------------------
 
 
-# ---------- SOLO MODE (auto restart backing track on singer silence) ----------
+# ---------- SOLO MODE (auto restart learning track on singer silence) ----------
 SOLO_MODE = False
 SOLO_SILENCE_SECONDS = 6.0
 SOLO_THRESHOLD_DBFS = -50.0  # conservative
