@@ -1305,7 +1305,7 @@
                 const res = await apiFetch('/wav/practice-link?file=' + encodeURIComponent(path) + '&channel=' + encodeURIComponent(channel));
                 const data = await res.json();
                 if (!data.ok || !data.url) {
-                    throw new Error(data.error || 'Could not open practice track');
+                    throw new Error(data.error || 'Could not open learning track');
                 }
                 window.open(data.url, '_blank');
                 return;
