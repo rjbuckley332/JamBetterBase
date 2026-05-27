@@ -365,8 +365,8 @@
                         <div id="uploadFileName" style="font-size:12px;color:rgba(255,255,255,0.8);margin-bottom:4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</div>
                         <div style="display:flex;gap:8px;align-items:center;">
                             <label class="btn btn-sm" style="position:relative;overflow:hidden;cursor:pointer;margin:0;">
-                                Choose File
-                                <input type="file" id="tmpTrackUploadInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.mp4,.m4v" style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files[0]?this.files[0].name:'No file selected'">
+                                Choose Files
+                                <input type="file" id="tmpTrackUploadInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.mp4,.m4v" multiple style="position:absolute;left:-9999px;" onchange="document.getElementById('uploadFileName').textContent=this.files.length?this.files.length+' file(s) selected':'No file selected'">
                             </label>
                             <span class="help-tooltip" title="Upload your own learning track here. You will choose a folder inside Saved.">❓</span>
                             <button type="button" class="btn btn-sm btn-info" onclick="createSavedFolderPrompt()">New Folder</button>
@@ -1180,20 +1180,21 @@
 
         async function tmpTrackUpload() {
             const input = document.getElementById('tmpTrackUploadInput');
-            if (!input.files || !input.files[0]) {
-                alert('Please select a file first');
+            if (!input.files || !input.files.length) {
+                alert('Please select at least one file');
                 return;
             }
-            const file = input.files[0];
+            const files = Array.from(input.files);
             try {
                 const existingFolders = await fetchSavedFolders();
                 let defaultFolder = currentSavedFolderName();
                 if (!defaultFolder && existingFolders.length === 1) defaultFolder = existingFolders[0];
                 const promptLines = [
-                    'Choose a folder inside Saved for this upload.',
+                    'Choose a folder inside Saved for these uploads.',
                     existingFolders.length ? ('Existing folders: ' + existingFolders.join(', ')) : 'No folders yet. Enter a new folder name.',
                     '',
-                    'Folder name:'
+                    'Folder name:',
+                    'Files (' + files.length + '): ' + files.map(f => f.name).join(', ')
                 ];
                 let folder = window.prompt(promptLines.join('\n'), defaultFolder || '');
                 if (folder === null) return;
@@ -1207,20 +1208,29 @@
                     folder = await createSavedFolder(folder);
                     if (!folder) return;
                 }
-                const form = new FormData();
-                form.append('file', file);
-                form.append('folder', folder);
-                const res = await fetch('/wav/upload', { method: 'POST', body: form });
-                const data = await res.json();
-                if (data.ok) {
-                    wavCurrentPath = 'recordings/' + SAVED_ROOT + '/' + data.folder + '/';
+                let okCount = 0, failCount = 0, failures = [];
+                for (const file of files) {
+                    const form = new FormData();
+                    form.append('file', file);
+                    form.append('folder', folder);
+                    const res = await fetch('/wav/upload', { method: 'POST', body: form });
+                    const data = await res.json();
+                    if (data.ok) {
+                        okCount++;
+                    } else {
+                        failCount++;
+                        failures.push(file.name + ': ' + (data.error || 'Unknown error'));
+                    }
+                }
+                input.value = '';
+                document.getElementById('uploadFileName').textContent = 'No file selected';
+                if (failCount === 0) {
+                    wavCurrentPath = 'recordings/' + SAVED_ROOT + '/' + folder + '/';
                     document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
-                    alert('Uploaded to Saved/' + data.folder + ': ' + prettyUploadName(file.name));
-                    input.value = '';
-                    document.getElementById('uploadFileName').textContent = 'No file selected';
+                    alert('Uploaded ' + okCount + ' file(s) to Saved/' + folder + '.');
                     wavRefresh();
                 } else {
-                    alert('Upload failed: ' + (data.error || 'Unknown error'));
+                    alert('Uploaded ' + okCount + ' of ' + files.length + '.\nFailures:\n' + failures.join('\n'));
                 }
             } catch (e) {
                 alert('Upload error: ' + e);
