@@ -1,0 +1,12 @@
+[Unit]
+Description=JamBetter cleanup of old tenant recording date folders
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=nds
+Group=nds
+WorkingDirectory=/home/nds
+EnvironmentFile=-/home/nds/.env
+ExecStart=/home/nds/.venv/bin/python3 /home/nds/ops/cleanup_old_recording_folders.py --execute --tenant pd --tenant vc --tenant seigr
