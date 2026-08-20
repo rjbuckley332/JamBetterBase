@@ -245,21 +245,48 @@ def wav_should_exclude(basename: str, include_injector: bool = False) -> bool:
     return False
 
 
+def _audio_channel_count(path: Path) -> int | None:
+    """Return the number of audio channels in a WAV, if ffprobe can read it."""
+    cmd = [
+        'ffprobe', '-v', 'error',
+        '-select_streams', 'a:0',
+        '-show_entries', 'stream=channels',
+        '-of', 'default=nw=1:nk=1',
+        str(path),
+    ]
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        if p.returncode == 0:
+            return int((p.stdout or '').strip())
+    except Exception:
+        pass
+    return None
+
+
+def _mono_fold_filter(path: Path) -> str | None:
+    channels = _audio_channel_count(path)
+    if channels and channels > 1:
+        return 'pan=mono|c0=0.5*c0+0.5*c1'
+    return None
+
+
 def _pan_params_for_track(name: str) -> str:
     """Return an ffmpeg pan filter string for a barbershop stage layout."""
     n = (name or '').lower()
 
-    # Stage order (listener perspective): Bari, Bass, Lead, Tenor
+    # Stage order (listener perspective): Bari, Bass, Lead, Tenor.
+    # Keep each part present in both channels so phone/laptop playback does not
+    # hide hard-panned voices. Bass is trimmed a touch to avoid dominating mixes.
     if ('bari' in n) or ('tom' in n):
-        return 'pan=stereo|FL=1.00*c0|FR=0.10*c0'
+        return 'pan=stereo|FL=0.88*c0|FR=0.42*c0'
     if ('bass' in n) or re.search(r'\bed\b', n):
-        return 'pan=stereo|FL=0.80*c0|FR=0.60*c0'
+        return 'pan=stereo|FL=0.64*c0|FR=0.56*c0'
     if ('lead' in n) or ('rich' in n):
-        return 'pan=stereo|FL=0.60*c0|FR=0.80*c0'
+        return 'pan=stereo|FL=0.60*c0|FR=0.70*c0'
     if ('tenor' in n) or ('scott' in n):
-        return 'pan=stereo|FL=0.10*c0|FR=1.00*c0'
+        return 'pan=stereo|FL=0.42*c0|FR=0.88*c0'
 
-    return 'pan=stereo|FL=0.70*c0|FR=0.70*c0'
+    return 'pan=stereo|FL=0.65*c0|FR=0.65*c0'
 
 
 def create_leveled_mix_mp3(session_folder: Path, output_base: str,
@@ -290,11 +317,16 @@ def create_leveled_mix_mp3(session_folder: Path, output_base: str,
         out_wav = processed_dir / f"{bn}.norm.wav"
         processed_files.append(out_wav)
 
-        pan = _pan_params_for_track(bn)
+        filters = []
+        mono_fold = _mono_fold_filter(w)
+        if mono_fold:
+            filters.append(mono_fold)
+        filters.append(f"loudnorm=I={target_i}:TP={true_peak}:LRA={lra}")
+        filters.append(_pan_params_for_track(bn))
         cmd = [
             'ffmpeg', '-nostdin', '-y',
             '-i', str(w),
-            '-af', f"loudnorm=I={target_i}:TP={true_peak}:LRA={lra},{pan}",
+            '-af', ','.join(filters),
             '-ar', '48000',
             '-c:a', 'pcm_s16le',
             str(out_wav),
