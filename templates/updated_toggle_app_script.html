@@ -649,6 +649,8 @@
         let metronomeRunning = false;
         let playbackRunning = false;
         let wavCurrentPath = "recordings/";
+        let folderClickLock = false;
+        const FOLDER_CLICK_DEBOUNCE_MS = 300;
         const seenDirsByPath = {};
         const SAVED_ROOT = 'saved';
 
@@ -1031,6 +1033,9 @@
                     btn.innerHTML = '<span>📁 ' + uiFolderLabel(d) + '/</span>';
                     btn.style.cursor = 'pointer';
                     btn.onclick = () => {
+                        if (folderClickLock) return;
+                        folderClickLock = true;
+                        setTimeout(() => { folderClickLock = false; }, FOLDER_CLICK_DEBOUNCE_MS);
                         wavCurrentPath = wavCurrentPath + d + '/';
                         document.getElementById('wavPath').textContent = '/' + uiPathLabel(wavCurrentPath);
                         wavRefresh();

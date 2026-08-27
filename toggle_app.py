@@ -23,8 +23,8 @@ def _now_local() -> datetime:
     return datetime.now(_LOCAL_TZ)
 
 def _recording_map_key_now() -> str:
-    """UTC key that matches Jamulus folder timestamp basis."""
-    return datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+    """Local timezone key that matches tenant-local date boundaries."""
+    return _now_local().strftime('%Y%m%d_%H%M%S')
 
 app = Flask(__name__)
 
