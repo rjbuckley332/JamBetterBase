@@ -291,8 +291,13 @@ def _pan_params_for_track(name: str) -> str:
 
 def create_leveled_mix_mp3(session_folder: Path, output_base: str,
                            include_injector: bool = False,
-                           target_i: int = -20, true_peak: int = -2, lra: int = 7) -> Path | None:
-    """Create a loudness-leveled, panned stereo mix MP3 from singer WAVs."""
+                           target_i: int = -20, true_peak: int = -2, lra: int = 7,
+                           analysis_seconds: int = 12) -> Path | None:
+    """Create a loudness-leveled, panned stereo mix MP3 from singer WAVs.
+    
+    Uses static gain based on first N seconds analysis to preserve dynamics.
+    This allows breakout/solo parts to naturally stand out in the mix.
+    """
     wavs: list[Path] = []
     for p in sorted(session_folder.glob('*.wav')):
         if p.stat().st_size < 10240:
@@ -317,12 +322,47 @@ def create_leveled_mix_mp3(session_folder: Path, output_base: str,
         out_wav = processed_dir / f"{bn}.norm.wav"
         processed_files.append(out_wav)
 
-        filters = []
+        # Step 1: Analyze first N seconds to get mean volume
+        # Use volumedetect on a trimmed segment
+        trim_filter = f"atrim=0:{analysis_seconds}"
         mono_fold = _mono_fold_filter(w)
         if mono_fold:
+            trim_filter = f"{mono_fold},{trim_filter}"
+        
+        cmd_analyze = [
+            'ffmpeg', '-nostdin', '-y',
+            '-i', str(w),
+            '-af', f"{trim_filter},volumedetect",
+            '-f', 'null', '-'
+        ]
+        rc_analyze, out_analyze = run(cmd_analyze)
+        if rc_analyze != 0:
+            print(f"[mix] volume analysis failed for {w.name}\n{out_analyze}")
+            return None
+        
+        # Parse mean_volume from volumedetect output
+        mean_volume = _parse_mean_volume(out_analyze)
+        if mean_volume is None:
+            print(f"[mix] could not parse mean volume for {w.name}")
+            return None
+        
+        # Step 2: Calculate static gain to reach target loudness
+        # target_i is in LUFS, mean_volume is in dB
+        # Simple approximation: gain = target - mean
+        gain_db = target_i - mean_volume
+        
+        # Clamp gain to reasonable range (-20dB to +20dB)
+        gain_db = max(-20, min(20, gain_db))
+        
+        print(f"[mix] {w.name}: mean={mean_volume:.1f}dB, gain={gain_db:+.1f}dB")
+        
+        # Step 3: Apply static gain + panning
+        filters = []
+        if mono_fold:
             filters.append(mono_fold)
-        filters.append(f"loudnorm=I={target_i}:TP={true_peak}:LRA={lra}")
+        filters.append(f"volume={gain_db}dB")
         filters.append(_pan_params_for_track(bn))
+        
         cmd = [
             'ffmpeg', '-nostdin', '-y',
             '-i', str(w),
@@ -333,7 +373,7 @@ def create_leveled_mix_mp3(session_folder: Path, output_base: str,
         ]
         rc, out = run(cmd)
         if rc != 0:
-            print(f"[mix] loudnorm failed for {w.name}\n{out}")
+            print(f"[mix] gain application failed for {w.name}\n{out}")
             return None
 
     inputs: list[str] = []
@@ -365,6 +405,19 @@ def create_leveled_mix_mp3(session_folder: Path, output_base: str,
         pass
 
     return out_mp3
+
+
+def _parse_mean_volume(volumedetect_output: str) -> float | None:
+    """Parse mean_volume from ffmpeg volumedetect output.
+    
+    Example output line:
+    [Parsed_volumedetect_0 @ 0x...] mean_volume: -27.5 dB
+    """
+    import re
+    match = re.search(r'mean_volume:\s*([-\d.]+)\s*dB', volumedetect_output)
+    if match:
+        return float(match.group(1))
+    return None
 
 
 def _pad_upper_alnum(s: str, width: int) -> str:
